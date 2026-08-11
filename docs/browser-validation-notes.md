@@ -41,3 +41,15 @@ The new, isolated Cloudflare Pages project is available at `https://aibay-pro.pa
 ## Final production health check — 2026-08-11
 
 The isolated production endpoint `https://aibay-pro.pages.dev/api/health` returned a healthy response with `environment: production`. The Pages Functions bundle is active. External eBay, AI, and database providers remain disabled until their own server-side credentials are explicitly configured.
+
+## Local-first UI validation — 2026-08-11
+
+The revised workspace renders without a Settings navigation item or a disconnected-credentials warning. The sidebar now displays `Local workspace ready`, and the import view presents a local-first capability panel with no-account setup language. The visible example-source control still populates the controlled import input successfully.
+
+## Local-first workspace flow validation — 2026-08-11
+
+The staged import completed into the product workspace. Variant selection, evidence display, local optimization entry, and the market comparison area rendered successfully. The market area now uses `Comparison workspace`, `Example comparison workspace — not live market data`, and `Displayed price band`, preserving a clear distinction between local fixtures and verified provider results.
+
+## Local-first production deployment validation — 2026-08-11
+
+The isolated production deployment at `https://aibay-pro.pages.dev` displays the revised local-first interface. The settings item and disconnected-credentials notice are absent from the visible navigation. The health endpoint returned `ok: true` with `environment: production`; provider readiness remains false until separate, authorized external service credentials are configured.
