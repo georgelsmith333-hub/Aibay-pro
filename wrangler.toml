@@ -1,0 +1,26 @@
+name = "aibay"
+compatibility_date = "2026-08-08"
+pages_build_output_dir = "dist"
+
+[vars]
+APP_ENV = "demo"
+DEFAULT_MARKETPLACE = "EBAY_US"
+PUBLIC_API_VERSION = "v1"
+
+# Configure these bindings in Cloudflare Pages/Workers settings; never commit secrets.
+# DATABASE_URL = "configured in deployment secrets"
+# EBAY_CLIENT_ID = "configured in deployment secrets"
+# EBAY_CLIENT_SECRET = "configured in deployment secrets"
+# AI_PROVIDER_API_KEY = "configured in deployment secrets"
+# AI_PROVIDER_BASE_URL = "configured in deployment secrets"
+# AI_PROVIDER_MODEL = "configured in deployment secrets"
+# R2_MEDIA_BUCKET = "configured as an R2 binding"
+# JOB_QUEUE = "configured as a Queue binding"
+
+# [[r2_buckets]]
+# binding = "MEDIA_BUCKET"
+# bucket_name = "aibay-media"
+
+# [[queues.producers]]
+# binding = "JOB_QUEUE"
+# queue = "aibay-jobs"
