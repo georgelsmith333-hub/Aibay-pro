@@ -33,3 +33,11 @@ The Cloudflare Pages project and GitHub source are configured through the accoun
 ## Production deployment verification — 2026-08-11
 
 The Cloudflare Pages production deployment at `https://74493211.aibay.pages.dev` renders the AiBay workspace successfully. The deployed health endpoint responds with HTTP 200 and a valid API payload. At this stage, provider readiness correctly remains false for eBay, AI, and database services because no corresponding production integration credentials have been configured. The Pages Functions bundle is therefore active, while external-provider access remains deliberately disabled.
+
+## Isolated aibay-pro deployment verification — 2026-08-11
+
+The new, isolated Cloudflare Pages project is available at `https://aibay-pro.pages.dev`. The public site rendered successfully after initial edge propagation, and the original `aibay` project was not used for this final deployment. The deployment contains the AiBay frontend and Pages Functions bundle; external eBay, AI, and database credentials remain intentionally unconfigured.
+
+## Final production health check — 2026-08-11
+
+The isolated production endpoint `https://aibay-pro.pages.dev/api/health` returned a healthy response with `environment: production`. The Pages Functions bundle is active. External eBay, AI, and database providers remain disabled until their own server-side credentials are explicitly configured.
