@@ -85,3 +85,11 @@ After the market-state correction, the local recovery screen again rendered the 
 ## Manual-evidence market isolation validation — 2026-08-11
 
 The updated manual-evidence record rendered with all unsupplied facts as `Unknown`, supplied facts as `Needs review`, and optimization disabled. Its market panel displayed `No approved market snapshot for this record`, no listings, no price band, and a clear statement that unrelated examples will not be used as comparisons. This confirms that a user-provided workspace is isolated from the inherited example market fixture.
+
+## Production source-adapter validation — 2026-08-11
+
+The isolated production extractor at `https://aibay-pro.pages.dev/api/products/extract` was tested with the supplied AliExpress URL. It returned HTTP 409 and a structured `session_required` diagnostic from the `aliexpress-public-metadata` adapter, identifying the public redirect path `aliexpress.us → login.aliexpress.com`. The response documented that the source requires cookie synchronization to expose metadata and that AiBay will not replay session cookies or emulate a logged-in browser. The isolated production health endpoint remained healthy.
+
+## Production recovery-interface validation — 2026-08-11
+
+The deployed `https://aibay-pro.pages.dev` interface was tested with the supplied AliExpress URL. It rendered the session-dependent source explanation, the adapter and redirect-path diagnostic, safe alternatives, the manual-evidence continuation form, and a visibly paused import timeline. No unrelated product, image, variant, or market data was displayed.
