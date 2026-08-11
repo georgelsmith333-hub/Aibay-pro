@@ -91,10 +91,24 @@ export interface OptimizationRun {
   mediaPlan: Array<{ mediaId: string; action: string; reason: string }>
 }
 
+export type SourceDiagnosticStatus = 'public_evidence' | 'session_required' | 'access_controlled' | 'redirect_loop' | 'redirect_limit' | 'incomplete'
+
+export interface SourceDiagnostic {
+  status: SourceDiagnosticStatus
+  reason: string
+  sourceHost: string
+  adapter: string
+  attemptedUrl: string
+  redirectCount: number
+  redirectHosts: string[]
+}
+
 export interface ImportFailure {
   blocked: boolean
   reason: string
   alternatives: string[]
+  sourceUrl: string
+  diagnostic?: SourceDiagnostic
 }
 
 export interface JobEvent {

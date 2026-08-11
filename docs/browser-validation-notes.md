@@ -69,3 +69,19 @@ The supplied AliExpress URL was tested in production. The import view now displa
 ## Final source-bound outcome validation — 2026-08-11
 
 The final deployment at `https://29db2eda.aibay-pro.pages.dev` was tested with the supplied canonical AliExpress URL. The production interface showed the live progress bar, completed URL validation, flagged public-evidence recovery as unavailable, and reported `No source record`; it did not revert to `Working`. The workspace never displayed an unrelated product or fixture. The source response indicated repeated redirects before a stable public product page was available, which AiBay now reports without attempting an access-control bypass.
+
+## Session-dependent source diagnostic and evidence continuation — 2026-08-11
+
+The local Pages runtime received the supplied AliExpress URL and returned HTTP 409 with a structured `session_required` diagnostic. The browser UI showed the source adapter (`aliexpress-public-metadata`), one inspected redirect, and the path from `aliexpress.us` to `login.aliexpress.com`. It clearly stated that AiBay will not replay session cookies or emulate a logged-in browser. The recovery screen rendered a working manual-evidence form whose fields are explicitly described as user-provided and review-gated.
+
+## Manual-evidence workspace validation — 2026-08-11
+
+The continuation form created a workspace from the entered title, brand, part number, price, and specification notes. All fields displayed `User-provided field · Manual evidence intake`, were marked `Needs review`, contained no public source image, and left optimization disabled. During this test, the inherited example market fixture was detected as inappropriate for user-provided records. The market state was then corrected so such records show no product-relevant snapshot until an approved provider returns one.
+
+## Updated session diagnostic screen — 2026-08-11
+
+After the market-state correction, the local recovery screen again rendered the session-dependent diagnosis, route diagnostics, safe alternatives, and responsive manual-evidence form. The import was stopped at the public-evidence stage and did not attempt session replay or any CAPTCHA/access-control bypass.
+
+## Manual-evidence market isolation validation — 2026-08-11
+
+The updated manual-evidence record rendered with all unsupplied facts as `Unknown`, supplied facts as `Needs review`, and optimization disabled. Its market panel displayed `No approved market snapshot for this record`, no listings, no price band, and a clear statement that unrelated examples will not be used as comparisons. This confirms that a user-provided workspace is isolated from the inherited example market fixture.

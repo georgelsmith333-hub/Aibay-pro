@@ -1,5 +1,7 @@
 import { assertSafePublicUrl } from './security'
 
+import { adapterFor, normalizePublicSource, redirectDiagnostic, sessionRedirectDiagnostic, type SourceDiagnostic } from './source-adapters'
+
 export type ExtractedEvidence = {
   label: string
   value: string
@@ -27,6 +29,7 @@ export type ProductExtraction = {
   variants: ExtractedVariant[]
   sourceHealth: 'healthy' | 'blocked' | 'incomplete'
   warnings: string[]
+  sourceDiagnostic: SourceDiagnostic
   retrievedAt: string
 }
 
@@ -44,13 +47,12 @@ function absoluteUrl(value: string | undefined, base: URL) {
   } catch { return '' }
 }
 
-function publicFetchUrl(sourceUrl: URL) {
-  const cleaned = new URL(sourceUrl)
-  const trackingParameter = /^(?:utm_[^=]+|gclid|fbclid|msclkid|_t|spm|gps-id|scm|scm_id|scm-url|pvid|pdp_ext_f|pdp_npi|utparam-url|curPageLogUid|browser_id|aff_trace_key|aff_platform|m_page_id|ref|ref_)$/i
-  for (const key of [...cleaned.searchParams.keys()]) {
-    if (trackingParameter.test(key)) cleaned.searchParams.delete(key)
+function emptyExtraction(sourceUrl: URL, canonicalUrl: string, diagnostic: SourceDiagnostic): ProductExtraction {
+  return {
+    sourceUrl: sourceUrl.toString(), canonicalUrl, sourceHost: sourceUrl.hostname.replace(/^www\./, ''), title: '', description: '',
+    price: { value: null, currency: null }, media: [], fields: [], variants: [], sourceHealth: 'blocked',
+    warnings: [diagnostic.reason], sourceDiagnostic: diagnostic, retrievedAt: new Date().toISOString(),
   }
-  return cleaned
 }
 
 async function fetchPublicHtml(url: URL, timeoutMs = 12_000) {
@@ -153,19 +155,26 @@ export function sourceLooksBlocked(html: string, status: number) {
   return status === 401 || status === 403 || status === 429 || /captcha|recaptcha|hcaptcha|cf-chl-|verify you are human|access denied|enable cookies/i.test(html)
 }
 
-export async function extractPublicProduct(sourceUrl: string, redirectCount = 0, visited = new Set<string>()): Promise<ProductExtraction> {
-  const safeUrl = assertSafePublicUrl(sourceUrl)
-  const fetchUrl = publicFetchUrl(safeUrl)
-  if (redirectCount >= 3) throw new Error('The source redirected too many times before exposing a public product page.')
-  if (visited.has(fetchUrl.toString())) throw new Error('The source redirected in a loop before exposing a public product page.')
+export async function extractPublicProduct(sourceUrl: string, redirectCount = 0, visited = new Set<string>(), redirectHosts: string[] = []): Promise<ProductExtraction> {
+  const sourceRoot = assertSafePublicUrl(sourceUrl)
+  const { adapter, url: fetchUrl } = normalizePublicSource(sourceRoot)
+  const redirectTrail = redirectHosts.length ? redirectHosts : [fetchUrl.hostname.replace(/^www\./, '')]
+  if (redirectCount >= 3) return emptyExtraction(sourceRoot, fetchUrl.toString(), redirectDiagnostic('redirect_limit', sourceRoot, fetchUrl, adapter, redirectCount, redirectTrail))
+  if (visited.has(fetchUrl.toString())) return emptyExtraction(sourceRoot, fetchUrl.toString(), redirectDiagnostic('redirect_loop', sourceRoot, fetchUrl, adapter, redirectCount, redirectTrail))
   visited.add(fetchUrl.toString())
   const response = await fetchPublicHtml(fetchUrl)
   if ([301, 302, 303, 307, 308].includes(response.status)) {
     const location = response.headers.get('location')
     if (!location) throw new Error('The source redirected without a usable destination.')
-    const redirected = absoluteUrl(location, fetchUrl)
-    if (!redirected) throw new Error('The source redirected to an unsupported destination.')
-    return extractPublicProduct(redirected, redirectCount + 1, visited)
+    const redirectedValue = absoluteUrl(location, fetchUrl)
+    if (!redirectedValue) throw new Error('The source redirected to an unsupported destination.')
+    const redirectedUrl = assertSafePublicUrl(redirectedValue)
+    const redirectedAdapter = adapterFor(redirectedUrl)
+    const nextHosts = [...redirectTrail, redirectedUrl.hostname.replace(/^www\./, '')]
+    if (redirectedAdapter.requiresSessionForRedirect?.(redirectedUrl)) {
+      return emptyExtraction(sourceRoot, fetchUrl.toString(), sessionRedirectDiagnostic(sourceRoot, redirectedUrl, adapter, redirectCount + 1, nextHosts))
+    }
+    return extractPublicProduct(redirectedValue, redirectCount + 1, visited, nextHosts)
   }
   const declaredSize = Number(response.headers.get('content-length') || 0)
   if (declaredSize > 1_500_000) throw new Error('The source page is too large for bounded extraction.')
@@ -174,7 +183,7 @@ export async function extractPublicProduct(sourceUrl: string, redirectCount = 0,
   const health = sourceLooksBlocked(html, response.status) ? 'blocked' : response.ok ? 'healthy' : 'incomplete'
   if (health === 'blocked') {
     return {
-      sourceUrl: safeUrl.toString(), canonicalUrl, sourceHost: safeUrl.hostname.replace(/^www\./, ''), title: '', description: '', price: { value: null, currency: null }, media: [], fields: [], variants: [], sourceHealth: 'blocked', warnings: ['The source requires a permitted fallback. AiBay does not bypass CAPTCHA, login, or access controls.'], retrievedAt: new Date().toISOString(),
+      sourceUrl: sourceRoot.toString(), canonicalUrl, sourceHost: sourceRoot.hostname.replace(/^www\./, ''), title: '', description: '', price: { value: null, currency: null }, media: [], fields: [], variants: [], sourceHealth: 'blocked', warnings: ['The source requires a permitted fallback. AiBay does not bypass CAPTCHA, login, or access controls.'], sourceDiagnostic: { status: 'access_controlled', reason: 'The public source signalled access controls or anti-bot verification. AiBay does not bypass these controls.', sourceHost: sourceRoot.hostname.replace(/^www\./, ''), adapter: adapter.id, attemptedUrl: fetchUrl.toString(), redirectCount, redirectHosts: redirectTrail }, retrievedAt: new Date().toISOString(),
     }
   }
   if (!response.ok) throw new Error(`The source returned HTTP ${response.status}.`)
@@ -186,7 +195,7 @@ export async function extractPublicProduct(sourceUrl: string, redirectCount = 0,
   const priceText = stringValue(offer.price) || metaContent(html, 'product:price:amount')
   const currency = stringValue(offer.priceCurrency) || metaContent(html, 'product:price:currency') || ''
   const priceValue = Number(priceText.replace(/[^0-9.]/g, ''))
-  const rawImage = firstImage(product.image, safeUrl) || absoluteUrl(metaContent(html, 'og:image'), safeUrl)
+  const rawImage = firstImage(product.image, fetchUrl) || absoluteUrl(metaContent(html, 'og:image'), fetchUrl)
   const brand = typeof product.brand === 'object' && product.brand ? stringValue((product.brand as JsonRecord).name) : stringValue(product.brand)
   const sku = stringValue(product.sku)
   const gtin = stringValue(product.gtin13) || stringValue(product.gtin14) || stringValue(product.gtin12) || stringValue(product.gtin8)
@@ -207,9 +216,10 @@ export async function extractPublicProduct(sourceUrl: string, redirectCount = 0,
     ...(variants.length ? [] : ['No supported selectable variants were detected from public selects.']),
   ]
   return {
-    sourceUrl: safeUrl.toString(), canonicalUrl, sourceHost: safeUrl.hostname.replace(/^www\./, ''), title, description,
+    sourceUrl: sourceRoot.toString(), canonicalUrl, sourceHost: sourceRoot.hostname.replace(/^www\./, ''), title, description,
     price: { value: Number.isFinite(priceValue) && priceValue ? priceValue : null, currency: currency || null },
     media: rawImage ? [{ url: rawImage, alt: `${title || 'Product'} source image`, sourcePath: product.image ? 'JSON-LD Product.image' : 'Open Graph og:image' }] : [],
-    fields, variants, sourceHealth: warnings.length > 0 ? 'incomplete' : 'healthy', warnings, retrievedAt: new Date().toISOString(),
+    fields, variants, sourceHealth: warnings.length > 0 ? 'incomplete' : 'healthy', warnings,
+    sourceDiagnostic: { status: warnings.length > 0 ? 'incomplete' : 'public_evidence', reason: warnings.length > 0 ? 'The public page was retrieved, but some expected product evidence was absent.' : 'Public structured or visible product evidence was recovered.', sourceHost: sourceRoot.hostname.replace(/^www\./, ''), adapter: adapter.id, attemptedUrl: fetchUrl.toString(), redirectCount, redirectHosts: redirectTrail }, retrievedAt: new Date().toISOString(),
   }
 }

@@ -1,4 +1,4 @@
-import type { JobEvent, MarketSnapshot, OptimizationRun, ProductWorkspace } from '../types/aibay'
+import type { JobEvent, MarketSnapshot, OptimizationRun, ProductWorkspace, SourceDiagnostic } from '../types/aibay'
 
 export const imageLibrary = {
   product: 'https://images.unsplash.com/photo-1612817288484-6f916006741a?auto=format&fit=crop&w=1200&q=85',
@@ -146,6 +146,7 @@ export type PublicExtraction = {
   variants: Array<{ label: string; attributes: Record<string, string>; sourcePath: string }>
   sourceHealth: 'healthy' | 'blocked' | 'incomplete'
   warnings: string[]
+  sourceDiagnostic?: SourceDiagnostic
   retrievedAt: string
 }
 
@@ -196,5 +197,53 @@ export function workspaceFromExtraction(extraction: PublicExtraction): ProductWo
     variants,
     media,
     documents: [],
+  }
+}
+
+export type ManualEvidenceInput = {
+  sourceUrl: string
+  title: string
+  brand: string
+  model: string
+  price: string
+  currency: string
+  description: string
+}
+
+export function workspaceFromManualEvidence(input: ManualEvidenceInput): ProductWorkspace {
+  const value = Number(input.price.replace(/[^0-9.]/g, ''))
+  const addField = (label: string, fieldValue: string) => ({
+    label,
+    value: fieldValue || 'Not supplied',
+    state: fieldValue ? 'needs_review' as const : 'unknown' as const,
+    method: fieldValue ? 'User-provided field' : 'No evidence supplied',
+    source: fieldValue ? 'Manual evidence intake' : '—',
+    confidence: 0,
+  })
+  const fields = [
+    addField('Title', input.title),
+    addField('Brand', input.brand),
+    addField('Model', input.model),
+    addField('Source price', input.price ? `${value || input.price} ${input.currency || 'USD'}` : ''),
+    addField('Description', input.description),
+  ]
+  return {
+    id: `manual_${crypto.randomUUID().replaceAll('-', '').slice(0, 12)}`,
+    sourceUrl: input.sourceUrl,
+    canonicalUrl: input.sourceUrl,
+    sourceHost: safeHost(input.sourceUrl),
+    importedAt: new Date().toISOString(),
+    title: input.title || 'User-provided product record',
+    brand: input.brand || 'Brand needs review',
+    model: input.model || 'Model needs review',
+    gtin: 'GTIN not supplied',
+    price: Number.isFinite(value) ? value : 0,
+    currency: input.currency || 'USD',
+    description: input.description || 'User-provided description. Add a source document or product images before using factual listing claims.',
+    completeness: Math.max(30, Math.min(70, fields.filter((field) => field.state === 'needs_review').length * 14)),
+    fields,
+    variants: [{ id: 'manual-default', label: 'Single item / confirmation required', sku: 'USER-EVIDENCE', price: Number.isFinite(value) ? value : 0, stock: 0, active: true, attributes: {} }],
+    media: [],
+    documents: [{ name: 'Manual evidence intake', type: 'User-provided fields', status: 'Needs review' }],
   }
 }
