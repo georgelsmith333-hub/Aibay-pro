@@ -153,16 +153,19 @@ export function sourceLooksBlocked(html: string, status: number) {
   return status === 401 || status === 403 || status === 429 || /captcha|recaptcha|hcaptcha|cf-chl-|verify you are human|access denied|enable cookies/i.test(html)
 }
 
-export async function extractPublicProduct(sourceUrl: string): Promise<ProductExtraction> {
+export async function extractPublicProduct(sourceUrl: string, redirectCount = 0, visited = new Set<string>()): Promise<ProductExtraction> {
   const safeUrl = assertSafePublicUrl(sourceUrl)
   const fetchUrl = publicFetchUrl(safeUrl)
+  if (redirectCount >= 3) throw new Error('The source redirected too many times before exposing a public product page.')
+  if (visited.has(fetchUrl.toString())) throw new Error('The source redirected in a loop before exposing a public product page.')
+  visited.add(fetchUrl.toString())
   const response = await fetchPublicHtml(fetchUrl)
   if ([301, 302, 303, 307, 308].includes(response.status)) {
     const location = response.headers.get('location')
     if (!location) throw new Error('The source redirected without a usable destination.')
-    const redirected = absoluteUrl(location, safeUrl)
+    const redirected = absoluteUrl(location, fetchUrl)
     if (!redirected) throw new Error('The source redirected to an unsupported destination.')
-    return extractPublicProduct(redirected)
+    return extractPublicProduct(redirected, redirectCount + 1, visited)
   }
   const declaredSize = Number(response.headers.get('content-length') || 0)
   if (declaredSize > 1_500_000) throw new Error('The source page is too large for bounded extraction.')
