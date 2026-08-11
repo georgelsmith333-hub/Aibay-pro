@@ -57,3 +57,7 @@ The isolated production deployment at `https://aibay-pro.pages.dev` displays the
 ## Capability panel validation — 2026-08-11
 
 The responsive capability panel rendered in the local browser preview. Its `Check routes` control invoked a real request and, because the static Vite preview does not serve Pages Functions, displayed the truthful local-mode fallback toast rather than a false provider-ready result. The Pages runtime endpoint itself returned the expected local evidence-engine capability response in a direct API test.
+
+## Responsive capability-routing production validation — 2026-08-11
+
+The production deployment at `https://74fa4201.aibay-pro.pages.dev` rendered the responsive capability panel. Selecting `Check routes` returned the deployed Pages Function response: the local evidence engine reported `ready`, listed its supported local capabilities, and confirmed that it is the only automatically selected route. The on-screen confirmation matched the API contract and did not claim that an external provider was connected.
