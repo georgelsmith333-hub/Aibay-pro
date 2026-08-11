@@ -61,3 +61,11 @@ The responsive capability panel rendered in the local browser preview. Its `Chec
 ## Responsive capability-routing production validation — 2026-08-11
 
 The production deployment at `https://74fa4201.aibay-pro.pages.dev` rendered the responsive capability panel. Selecting `Check routes` returned the deployed Pages Function response: the local evidence engine reported `ready`, listed its supported local capabilities, and confirmed that it is the only automatically selected route. The on-screen confirmation matched the API contract and did not claim that an external provider was connected.
+
+## Source-bound import validation — 2026-08-11
+
+The supplied AliExpress URL was tested in production. The import view now displayed a four-stage live progress bar—URL validation, public-evidence recovery, source-bound workspace creation, and evidence review. The source redirected repeatedly before yielding a stable public product page, so AiBay showed a manual-evidence outcome rather than loading unrelated example shoes, images, fields, variants, or market listings. Redirect traversal is now bounded to prevent edge subrequest exhaustion.
+
+## Final source-bound outcome validation — 2026-08-11
+
+The final deployment at `https://29db2eda.aibay-pro.pages.dev` was tested with the supplied canonical AliExpress URL. The production interface showed the live progress bar, completed URL validation, flagged public-evidence recovery as unavailable, and reported `No source record`; it did not revert to `Working`. The workspace never displayed an unrelated product or fixture. The source response indicated repeated redirects before a stable public product page was available, which AiBay now reports without attempting an access-control bypass.
