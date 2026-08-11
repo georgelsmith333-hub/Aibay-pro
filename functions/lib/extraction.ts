@@ -44,6 +44,34 @@ function absoluteUrl(value: string | undefined, base: URL) {
   } catch { return '' }
 }
 
+function publicFetchUrl(sourceUrl: URL) {
+  const cleaned = new URL(sourceUrl)
+  const trackingParameter = /^(?:utm_[^=]+|gclid|fbclid|msclkid|_t|spm|gps-id|scm|scm_id|scm-url|pvid|pdp_ext_f|pdp_npi|utparam-url|curPageLogUid|browser_id|aff_trace_key|aff_platform|m_page_id|ref|ref_)$/i
+  for (const key of [...cleaned.searchParams.keys()]) {
+    if (trackingParameter.test(key)) cleaned.searchParams.delete(key)
+  }
+  return cleaned
+}
+
+async function fetchPublicHtml(url: URL, timeoutMs = 12_000) {
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const request = fetch(url, {
+    redirect: 'manual',
+    headers: {
+      accept: 'text/html,application/xhtml+xml',
+      'user-agent': 'AiBayEvidenceImporter/1.1 (+https://aibay-pro.pages.dev/source-policy)',
+    },
+  })
+  const deadline = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => reject(new Error('The public source did not respond within the bounded 12-second acquisition window.')), timeoutMs)
+  })
+  try {
+    return await Promise.race([request, deadline])
+  } finally {
+    if (timeout) clearTimeout(timeout)
+  }
+}
+
 function metaContent(html: string, selector: string) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const expressions = [
@@ -127,13 +155,8 @@ export function sourceLooksBlocked(html: string, status: number) {
 
 export async function extractPublicProduct(sourceUrl: string): Promise<ProductExtraction> {
   const safeUrl = assertSafePublicUrl(sourceUrl)
-  const response = await fetch(safeUrl, {
-    redirect: 'manual',
-    headers: {
-      accept: 'text/html,application/xhtml+xml',
-      'user-agent': 'AiBayEvidenceImporter/1.0 (+https://aibay.example/source-policy)',
-    },
-  })
+  const fetchUrl = publicFetchUrl(safeUrl)
+  const response = await fetchPublicHtml(fetchUrl)
   if ([301, 302, 303, 307, 308].includes(response.status)) {
     const location = response.headers.get('location')
     if (!location) throw new Error('The source redirected without a usable destination.')
@@ -144,7 +167,7 @@ export async function extractPublicProduct(sourceUrl: string): Promise<ProductEx
   const declaredSize = Number(response.headers.get('content-length') || 0)
   if (declaredSize > 1_500_000) throw new Error('The source page is too large for bounded extraction.')
   const html = (await response.text()).slice(0, 1_500_000)
-  const canonicalUrl = absoluteUrl(linkHref(html, 'canonical'), safeUrl) || safeUrl.toString()
+  const canonicalUrl = absoluteUrl(linkHref(html, 'canonical'), fetchUrl) || fetchUrl.toString()
   const health = sourceLooksBlocked(html, response.status) ? 'blocked' : response.ok ? 'healthy' : 'incomplete'
   if (health === 'blocked') {
     return {

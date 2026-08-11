@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import clsx from 'clsx'
 import './App.css'
-import { buildImportEvents, buildOptimizationEvents, demoMarketSnapshot, demoOptimization, demoWorkspace, money, relativeTime, workspaceFromExtraction } from './lib/demo'
+import { buildImportEvents, buildOptimizationEvents, demoMarketSnapshot, demoOptimization, money, relativeTime, workspaceFromExtraction } from './lib/demo'
 import type { EvidenceField, EvidenceState, ImportFailure, JobEvent, JobState, MarketListing, MarketSnapshot, OptimizationRun, ProductMedia, ProductWorkspace } from './types/aibay'
 
 type NavItem = 'Workspace' | 'Market pulse' | 'Listing history' | 'Media studio'
@@ -57,8 +57,15 @@ function EmptyProductState({ url, setUrl, onImport, notify }: { url: string; set
 }
 function Principle({ number, icon, title, description }: { number: string; icon: ReactNode; title: string; description: string }) { return <Card className="principle-card"><div className="principle-top"><span>{number}</span>{icon}</div><h3>{title}</h3><p>{description}</p></Card> }
 
-function JobTimeline({ events, state }: { events: JobEvent[]; state: JobState }) { return <Card className="timeline-card"><div className="timeline-head"><div><p className="eyebrow">PROCESS STATUS</p><h3>{state === 'optimizing' ? 'Building your listing package' : state === 'blocked' ? 'Source requires a safe fallback' : 'Inspecting product source'}</h3></div>{state === 'blocked' ? <StatusPill state="warn"><AlertTriangle size={13} /> Paused safely</StatusPill> : <StatusPill state="live"><LoaderCircle className={state === 'ready' || state === 'complete' ? '' : 'spin'} size={13} /> {state === 'ready' || state === 'complete' ? 'Completed' : 'Working'}</StatusPill>}</div><div className="timeline-list">{events.map((event) => <div className={clsx('timeline-event', `timeline-${event.state}`)} key={event.id}><div className="timeline-mark">{event.state === 'complete' ? <Check size={14} /> : event.state === 'active' ? <LoaderCircle className="spin" size={14} /> : event.state === 'blocked' ? <AlertTriangle size={14} /> : <span />}</div><div><strong>{event.label}</strong><p>{event.detail}</p></div></div>)}</div></Card> }
-function BlockedSource({ failure, onReset }: { failure: ImportFailure; onReset: () => void }) { return <div className="blocked-source-wrap"><Card className="blocked-source-card"><div className="blocked-icon"><ShieldCheck size={28} /></div><p className="eyebrow">SAFE ACQUISITION STOP</p><h1>This source needs an approved fallback.</h1><p>{failure.reason}</p><div className="fallback-list">{failure.alternatives.map((alternative) => <div key={alternative}><CheckCircle2 size={16} />{alternative}</div>)}</div><button className="secondary-button" onClick={onReset}><ChevronRight size={16} /> Try another source</button></Card></div> }
+function JobTimeline({ events, state }: { events: JobEvent[]; state: JobState }) {
+  const completed = events.filter((event) => event.state === 'complete').length
+  const active = events.some((event) => event.state === 'active')
+  const progress = events.length ? Math.round(((completed + (active ? 0.45 : 0)) / events.length) * 100) : 0
+  const stopped = state === 'blocked' || state === 'unavailable'
+  const heading = state === 'optimizing' ? 'Building your listing package' : state === 'blocked' ? 'Source requires a safe fallback' : state === 'unavailable' ? 'Public product evidence was not recovered' : 'Inspecting product source'
+  return <Card className="timeline-card"><div className="timeline-head"><div><p className="eyebrow">LIVE IMPORT PROGRESS</p><h3>{heading}</h3></div>{stopped ? <StatusPill state="warn"><AlertTriangle size={13} /> {state === 'blocked' ? 'Paused safely' : 'No source record'}</StatusPill> : <StatusPill state="live"><LoaderCircle className={state === 'ready' || state === 'complete' ? '' : 'spin'} size={13} /> {state === 'ready' || state === 'complete' ? 'Completed' : 'Working'}</StatusPill>}</div><div className="progress-track" role="progressbar" aria-label="Product import progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress}><span style={{ width: `${progress}%` }} /></div><p className="progress-copy">{completed} of {events.length} stages completed{active ? ' · current stage is in progress' : ''}.</p><div className="timeline-list">{events.map((event) => <div className={clsx('timeline-event', `timeline-${event.state}`)} key={event.id}><div className="timeline-mark">{event.state === 'complete' ? <Check size={14} /> : event.state === 'active' ? <LoaderCircle className="spin" size={14} /> : event.state === 'blocked' ? <AlertTriangle size={14} /> : <span />}</div><div><strong>{event.label}</strong><p>{event.detail}</p></div></div>)}</div></Card>
+}
+function BlockedSource({ failure, events, state, onReset }: { failure: ImportFailure; events: JobEvent[]; state: JobState; onReset: () => void }) { return <div className="blocked-source-wrap"><Card className="blocked-source-card"><div className="blocked-icon"><ShieldCheck size={28} /></div><p className="eyebrow">{failure.blocked ? 'SAFE ACQUISITION STOP' : 'PUBLIC EVIDENCE NOT RECOVERED'}</p><h1>{failure.blocked ? 'This source needs an approved fallback.' : 'No verified product record was created.'}</h1><p>{failure.reason}</p><div className="fallback-list">{failure.alternatives.map((alternative) => <div key={alternative}><CheckCircle2 size={16} />{alternative}</div>)}</div><button className="secondary-button" onClick={onReset}><ChevronRight size={16} /> Try another source</button></Card><JobTimeline events={events} state={state} /></div> }
 
 function ProductOverview({ workspace, selectedVariant, setSelectedVariant, onOptimize, onOpenMedia, optimizing, optimization }: { workspace: ProductWorkspace; selectedVariant: string; setSelectedVariant: (id: string) => void; onOptimize: () => void; onOpenMedia: () => void; optimizing: boolean; optimization: OptimizationRun | null }) {
   const selected = workspace.variants.find((variant) => variant.id === selectedVariant) ?? workspace.variants[0]
@@ -115,39 +122,86 @@ function App() {
   const [activeNav, setActiveNav] = useState<NavItem>('Workspace'); const [mobileNavOpen, setMobileNavOpen] = useState(false); const [url, setUrl] = useState(''); const [marketSnapshot, setMarketSnapshot] = useState<MarketSnapshot>(() => demoMarketSnapshot()); const [marketMode, setMarketMode] = useState<'demo' | 'live'>('demo'); const [jobState, setJobState] = useState<JobState>('idle'); const [events, setEvents] = useState<JobEvent[]>([]); const [workspace, setWorkspace] = useState<ProductWorkspace | null>(null); const [failure, setFailure] = useState<ImportFailure | null>(null); const [selectedVariant, setSelectedVariant] = useState('v2'); const [optimization, setOptimization] = useState<OptimizationRun | null>(null); const [chosenTitle, setChosenTitle] = useState(''); const [toast, setToast] = useState('')
   const working = ['validating', 'extracting', 'normalizing', 'researching', 'optimizing'].includes(jobState); const title = useMemo(() => activeNav === 'Workspace' ? 'Product workspace' : activeNav, [activeNav]); const notify = (message: string) => { setToast(message); window.setTimeout(() => setToast(''), 2600) }
   const progressEvents = (sourceEvents: JobEvent[], doneState: JobState, onDone: () => void) => { setEvents(sourceEvents.map((event) => ({ ...event, state: 'pending' }))); let current = 0; const tick = () => { setEvents((previous) => previous.map((event, index) => index < current ? { ...event, state: 'complete' } : index === current ? { ...event, state: 'active' } : event)); if (current >= sourceEvents.length) { setJobState(doneState); onDone(); return }; current += 1; window.setTimeout(tick, 640) }; tick() }
-  const importSource = () => { const normalized = url.trim(); if (!normalized) return; const looksBlocked = /captcha|login|signin|blocked/i.test(normalized); if (looksBlocked) { setJobState('blocked'); setFailure({ blocked: true, reason: 'This source appears to require sign-in, CAPTCHA verification, or restricted access. AiBay will not bypass access controls or anti-bot systems.', alternatives: ['Use a public manufacturer page for the same product.', 'Upload a specification sheet, CSV, or product images you own.', 'Paste product facts manually with field-level source notes.', 'Connect an approved marketplace API if you have access.'] }); setEvents([{ id: 'validate', label: 'Validate source', detail: 'The source requested a restricted access path.', state: 'blocked' }]); return }; try { const parsed = new URL(normalized); if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error('protocol') } catch { notify('Enter a complete public http(s) URL to start the controlled import.'); return };     setFailure(null); setOptimization(null); setJobState('validating');
-    progressEvents(buildImportEvents(), 'ready', () => undefined)
-    void fetch('/api/products/extract', { method: 'POST', headers: { 'content-type': 'application/json', 'x-idempotency-key': crypto.randomUUID() }, body: JSON.stringify({ sourceUrl: normalized, consent: true }) })
+  const startImportProgress = (sourceEvents: JobEvent[], activeId: string) => setEvents(sourceEvents.map((event) => ({ ...event, state: event.id === activeId ? 'active' : 'pending' })))
+  const updateImportEvent = (id: string, state: JobEvent['state'], detail?: string) => setEvents((previous) => previous.map((event) => event.id === id ? { ...event, state, ...(detail ? { detail } : {}) } : event))
+  const stopImport = (blocked: boolean, reason: string, alternatives: string[]) => {
+    setWorkspace(null)
+    setJobState(blocked ? 'blocked' : 'unavailable')
+    setFailure({ blocked, reason, alternatives })
+  }
+  const importSource = () => {
+    const normalized = url.trim()
+    if (!normalized) return
+    const looksBlocked = /captcha|login|signin|blocked/i.test(normalized)
+    if (looksBlocked) {
+      startImportProgress(buildImportEvents(), 'validate')
+      updateImportEvent('validate', 'blocked', 'The supplied URL itself indicates a restricted access path.')
+      stopImport(true, 'This source appears to require sign-in, CAPTCHA verification, or restricted access. AiBay will not bypass access controls or anti-bot systems.', ['Use a public manufacturer page for the same product.', 'Upload a specification sheet, CSV, or product images you own.', 'Paste product facts manually with field-level source notes.', 'Connect an approved marketplace API if you have access.'])
+      return
+    }
+    try {
+      const parsed = new URL(normalized)
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error('protocol')
+    } catch {
+      notify('Enter a complete public http(s) URL to start the controlled import.')
+      return
+    }
+    setFailure(null)
+    setWorkspace(null)
+    setOptimization(null)
+    setActiveNav('Workspace')
+    setJobState('validating')
+    startImportProgress(buildImportEvents(), 'validate')
+    window.setTimeout(() => {
+      updateImportEvent('validate', 'complete', 'Public URL accepted. Tracking-only query parameters are ignored during inspection.')
+      updateImportEvent('extract', 'active', 'Requesting public HTML, structured metadata, and visible product facts from the supplied source.')
+      setJobState('extracting')
+    }, 180)
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 18_000)
+    void fetch('/api/products/extract', { method: 'POST', headers: { 'content-type': 'application/json', 'x-idempotency-key': crypto.randomUUID() }, body: JSON.stringify({ sourceUrl: normalized, consent: true }), signal: controller.signal })
       .then(async (response) => ({ response, payload: await response.json() as { status?: string; extraction?: unknown; alternatives?: string[]; message?: string } }))
       .then(({ response, payload }) => {
+        window.clearTimeout(timeout)
         if (response.status === 409) {
-          setJobState('blocked')
-          setFailure({ blocked: true, reason: payload.extraction && typeof payload.extraction === 'object' && 'warnings' in payload.extraction ? String((payload.extraction as { warnings?: string[] }).warnings?.[0] || 'The source requires a permitted fallback.') : 'The source requires a permitted fallback.', alternatives: payload.alternatives || ['Use a public manufacturer page.', 'Upload source evidence.', 'Enter fields manually.'] })
+          updateImportEvent('extract', 'blocked', 'The source did not permit public metadata retrieval without an access-control bypass.')
+          stopImport(true, payload.extraction && typeof payload.extraction === 'object' && 'warnings' in payload.extraction ? String((payload.extraction as { warnings?: string[] }).warnings?.[0] || 'The source requires a permitted fallback.') : 'The source requires a permitted fallback.', payload.alternatives || ['Use a public manufacturer page.', 'Upload source evidence.', 'Enter fields manually.'])
           return
         }
         if (response.ok && payload.extraction && typeof payload.extraction === 'object') {
-          const liveWorkspace = workspaceFromExtraction(payload.extraction as Parameters<typeof workspaceFromExtraction>[0])
-          setWorkspace(liveWorkspace)
-          setSelectedVariant(liveWorkspace.variants[0]?.id || '')
-          setJobState('ready')
-          setEvents(buildImportEvents().map((event) => ({ ...event, state: 'complete' })))
-          notify('Public source metadata extracted with field-level evidence.')
+          const extraction = payload.extraction as Parameters<typeof workspaceFromExtraction>[0]
+          const hasProductEvidence = Boolean(extraction.title.trim()) && (extraction.fields.length > 1 || extraction.media.length > 0 || extraction.variants.length > 0)
+          if (!hasProductEvidence) {
+            updateImportEvent('extract', 'blocked', 'The source returned a page, but not enough attributable product metadata to create a verified record.')
+            stopImport(false, 'AiBay did not receive enough public product evidence from this exact source URL. It will not substitute a different product, image set, or fixture.', ['Try the same product’s public manufacturer page.', 'Use the product’s clean canonical URL without checkout or recommendation parameters.', 'Upload rights-cleared product images or a specification document.', 'Paste source-backed product facts manually for review.'])
+            return
+          }
+          updateImportEvent('extract', 'complete', `Recovered ${extraction.fields.length} evidence fields, ${extraction.variants.length} selectable variants, and ${extraction.media.length} source images.`)
+          updateImportEvent('normalize', 'active', 'Mapping only recovered source facts into the product workspace.')
+          setJobState('normalizing')
+          const liveWorkspace = workspaceFromExtraction(extraction)
+          window.setTimeout(() => {
+            setWorkspace(liveWorkspace)
+            setSelectedVariant(liveWorkspace.variants[0]?.id || '')
+            updateImportEvent('normalize', 'complete', 'Source-bound workspace created. Unknown facts remain marked for review.')
+            updateImportEvent('review', 'complete', 'Ready for evidence review. Market research remains separate until an approved source returns results.')
+            setJobState('ready')
+            notify('Public product evidence imported. Review field provenance before optimizing.')
+          }, 320)
           return
         }
-        throw new Error(payload.message || 'Live extraction is unavailable.')
+        throw new Error(payload.message || 'The extractor did not return a usable public product record.')
       })
-      .catch(() => {
-        window.setTimeout(() => {
-          setWorkspace(demoWorkspace(normalized))
-          setSelectedVariant('v2')
-          setJobState('ready')
-          setEvents(buildImportEvents().map((event) => ({ ...event, state: 'complete' })))
-          notify('Live extractor is not available locally; loaded clearly labelled demo fixtures.')
-        }, 2600)
-      }) }
+      .catch((error: unknown) => {
+        window.clearTimeout(timeout)
+        const timedOut = error instanceof DOMException && error.name === 'AbortError'
+        updateImportEvent('extract', 'blocked', timedOut ? 'The public source did not respond within the bounded acquisition window.' : 'The public source could not be retrieved as a usable product record.')
+        stopImport(false, timedOut ? 'AiBay stopped the import after waiting for this exact source URL. No other product, image, or fixture was substituted.' : `AiBay could not recover attributable public product evidence from this exact source URL. ${error instanceof Error ? error.message : ''}`.trim(), ['Try the product’s clean public URL without recommendation or tracking parameters.', 'Use a public manufacturer page for the same item.', 'Upload permitted source images or a specification document.', 'Enter product facts manually with source notes.'])
+      })
+  }
   const optimize = () => { if (!workspace) return; const selected = workspace.variants.find((variant) => variant.id === selectedVariant); let resolved: OptimizationRun | null = null; setJobState('optimizing'); progressEvents(buildOptimizationEvents(), 'complete', () => { const result = resolved || demoOptimization(); setOptimization(result); setChosenTitle(result.chosenTitle); notify(resolved ? 'Evidence-grounded optimization package ready for review.' : 'Optimization package ready in clearly labelled demo mode.') }); void fetch('/api/products/optimize', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ productTitle: workspace.title, description: workspace.description, brand: workspace.brand, model: workspace.model, gtin: workspace.gtin, currency: workspace.currency, selectedVariant: selected, evidence: workspace.fields.map((field) => ({ label: field.label, value: field.value, state: field.state, source: field.source })), market: marketSnapshot.listings.map((listing) => ({ title: listing.title, price: listing.price, shipping: listing.shipping, condition: listing.condition, matched: listing.matched })), sourceSnapshotId: workspace.id }) }).then(async (response) => ({ response, payload: await response.json() as { listingPackage?: { titleCandidates: string[]; description: string; itemSpecifics: Array<{ label: string; value: string; state: EvidenceState }>; priceBand: { low: number | null; target: number | null; high: number | null; currency: string }; strategy: string[]; validation: Array<{ label: string; passed: boolean; note: string }> } } })).then(({ response, payload }) => { if (!response.ok || !payload.listingPackage) return; const listingPackage = payload.listingPackage; resolved = { id: `opt_${Date.now()}`, createdAt: new Date().toISOString(), titleCandidates: listingPackage.titleCandidates, chosenTitle: listingPackage.titleCandidates[0] || workspace.title.slice(0, 80), description: listingPackage.description, specifics: listingPackage.itemSpecifics, priceBand: { low: listingPackage.priceBand.low || 0, target: listingPackage.priceBand.target || 0, high: listingPackage.priceBand.high || 0, currency: listingPackage.priceBand.currency }, strategy: listingPackage.strategy, policyChecks: listingPackage.validation, mediaPlan: workspace.media.map((media, index) => ({ mediaId: media.id, action: index === 0 ? 'Primary image review' : 'Gallery review', reason: 'Confirm source rights and preserve exact product identity.' })) } }).catch(() => undefined) }
   const reset = () => { setWorkspace(null); setFailure(null); setEvents([]); setJobState('idle'); setUrl(''); setOptimization(null); setMarketSnapshot(demoMarketSnapshot()); setMarketMode('demo'); setActiveNav('Workspace') }; const refreshMarket = () => { if (!workspace) return; void fetch('/api/ebay/research', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query: [workspace.brand, workspace.model, workspace.title].filter(Boolean).join(' '), gtin: workspace.gtin, limit: 20 }) }).then(async (response) => ({ response, payload: await response.json() as { status?: string; listings?: Array<{ id: string; title: string; url: string; image: string; price: number; shipping: number; condition: string; seller: string; feedback: number }>; query?: string; capturedAt?: string; resultCount?: number } })).then(({ response, payload }) => { if (response.ok && payload.status === 'live' && payload.listings) { const mappedListings: MarketListing[] = payload.listings.map((item, index) => ({ ...item, id: item.id || `live-${index}`, imageCount: 0, matched: index < 5 ? 'direct' : 'comparable' })); setMarketSnapshot({ id: `live_${Date.now()}`, query: payload.query || workspace.title, capturedAt: payload.capturedAt || new Date().toISOString(), marketplace: 'EBAY_US', currency: workspace.currency, resultCount: payload.resultCount || mappedListings.length, directMatchCount: mappedListings.filter((item) => item.matched === 'direct').length, listings: mappedListings, commonTerms: [], itemSpecificGaps: [] }); setMarketMode('live'); notify('Official eBay Browse API snapshot refreshed.') } else { notify('No approved market provider returned results. The example comparison view remains clearly labelled.') } }).catch(() => notify('No approved market provider is available. The example comparison view remains clearly labelled.')) }
-  const renderContent = () => { if (failure) return <BlockedSource failure={failure} onReset={reset} />; if (working && !workspace) return <div className="working-state"><JobTimeline events={events} state={jobState} /></div>; if (activeNav === 'Media studio' && workspace) return <MediaStudio media={workspace.media} setMedia={(media) => setWorkspace({ ...workspace, media })} />; if (activeNav === 'Market pulse' && workspace) return <MarketIntelligence onRefresh={refreshMarket} snapshot={marketSnapshot} isLive={marketMode === 'live'} />; if (activeNav === 'Listing history') return <ListingHistory optimization={optimization} onReturn={() => setActiveNav('Workspace')} />; if (!workspace) return <EmptyProductState url={url} setUrl={setUrl} onImport={importSource} notify={notify} />; return <div className="workspace-content"><ProductOverview workspace={workspace} selectedVariant={selectedVariant} setSelectedVariant={setSelectedVariant} onOptimize={optimize} onOpenMedia={() => setActiveNav('Media studio')} optimizing={jobState === 'optimizing'} optimization={optimization} />{working && <JobTimeline events={events} state={jobState} />}<div className="data-grid"><EvidencePanel fields={workspace.fields} /><MarketIntelligence onRefresh={refreshMarket} snapshot={marketSnapshot} isLive={marketMode === 'live'} /></div>{optimization && <OptimizationPanel optimization={optimization} onChooseTitle={setChosenTitle} chosenTitle={chosenTitle} />}</div> }
+  const renderContent = () => { if (failure) return <BlockedSource failure={failure} events={events} state={jobState} onReset={reset} />; if (working && !workspace) return <div className="working-state"><JobTimeline events={events} state={jobState} /></div>; if (activeNav === 'Media studio' && workspace) return <MediaStudio media={workspace.media} setMedia={(media) => setWorkspace({ ...workspace, media })} />; if (activeNav === 'Market pulse' && workspace) return <MarketIntelligence onRefresh={refreshMarket} snapshot={marketSnapshot} isLive={marketMode === 'live'} />; if (activeNav === 'Listing history') return <ListingHistory optimization={optimization} onReturn={() => setActiveNav('Workspace')} />; if (!workspace) return <EmptyProductState url={url} setUrl={setUrl} onImport={importSource} notify={notify} />; return <div className="workspace-content"><ProductOverview workspace={workspace} selectedVariant={selectedVariant} setSelectedVariant={setSelectedVariant} onOptimize={optimize} onOpenMedia={() => setActiveNav('Media studio')} optimizing={jobState === 'optimizing'} optimization={optimization} />{working && <JobTimeline events={events} state={jobState} />}<div className="data-grid"><EvidencePanel fields={workspace.fields} /><MarketIntelligence onRefresh={refreshMarket} snapshot={marketSnapshot} isLive={marketMode === 'live'} /></div>{optimization && <OptimizationPanel optimization={optimization} onChooseTitle={setChosenTitle} chosenTitle={chosenTitle} />}</div> }
   return <div className="app-shell"><aside className={clsx('sidebar', mobileNavOpen && 'mobile-open')}><div className="brand-lockup"><div className="brand-mark"><span>A</span></div><div><strong>AiBay</strong><small>SELL WITH EVIDENCE</small></div><button className="mobile-close" onClick={() => setMobileNavOpen(false)}><X size={18} /></button></div><nav>{navItems.map((item) => { const Icon = item.icon; return <button key={item.label} className={clsx('nav-item', activeNav === item.label && 'active')} onClick={() => { setActiveNav(item.label); setMobileNavOpen(false) }}><Icon size={18} /><span>{item.label}</span>{item.label === 'Workspace' && workspace && <i />}</button> })}</nav><div className="sidebar-bottom"><div className="connection-card local-ready-card"><span className="connection-mark"><Zap size={14} /></span><div><strong>Local workspace ready</strong><small>Evidence, drafts, and exports active</small></div></div><button className="profile-button" onClick={() => notify('AiBay Studio is operating in local evidence mode.')}><span>AI</span><div><strong>AiBay Studio</strong><small>Product intelligence</small></div><ChevronDown size={15} /></button></div></aside>{mobileNavOpen && <button className="mobile-scrim" onClick={() => setMobileNavOpen(false)} aria-label="Close menu" />}<main className="main-area"><header className="topbar"><div className="topbar-title"><button className="mobile-menu" onClick={() => setMobileNavOpen(true)}><Menu size={19} /></button><div><p className="eyebrow">AIBAY / {activeNav.toUpperCase()}</p><strong>{title}</strong></div></div><div className="topbar-actions"><button className="header-action" onClick={() => notify('Guide: import permitted product evidence, review variants, then create a draft for approval.')}><CircleHelp size={18} /><span>Guide</span></button><button className="header-action notification" onClick={() => notify('No provider action is required. Local evidence mode is ready.')}><Bell size={18} /><i /></button>{workspace && <button className="new-import-button" onClick={reset}><Upload size={16} /> New import</button>}</div></header><div className="content-area">{renderContent()}</div></main>{toast && <div className="toast"><CheckCircle2 size={17} />{toast}</div>}</div>
 }
 export default App

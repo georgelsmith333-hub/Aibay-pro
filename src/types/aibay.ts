@@ -1,5 +1,5 @@
 export type EvidenceState = 'verified' | 'derived' | 'needs_review' | 'unknown'
-export type JobState = 'idle' | 'validating' | 'extracting' | 'normalizing' | 'researching' | 'ready' | 'blocked' | 'optimizing' | 'complete'
+export type JobState = 'idle' | 'validating' | 'extracting' | 'normalizing' | 'researching' | 'ready' | 'blocked' | 'unavailable' | 'optimizing' | 'complete'
 
 export interface EvidenceField {
   label: string
@@ -92,7 +92,7 @@ export interface OptimizationRun {
 }
 
 export interface ImportFailure {
-  blocked: true
+  blocked: boolean
   reason: string
   alternatives: string[]
 }

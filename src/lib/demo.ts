@@ -103,11 +103,10 @@ export const demoOptimization = (): OptimizationRun => ({
 })
 
 export const buildImportEvents = (): JobEvent[] => [
-  { id: 'validate', label: 'Validate source', detail: 'Checking a safe, public HTTPS product URL.', state: 'pending' },
-  { id: 'extract', label: 'Extract evidence', detail: 'Parsing canonical metadata, JSON-LD, and visible product facts.', state: 'pending' },
-  { id: 'normalize', label: 'Normalize product', detail: 'Building evidence-backed fields and variant options.', state: 'pending' },
-  { id: 'research', label: 'Research eBay US', detail: 'Preparing official-marketplace queries and a fresh snapshot.', state: 'pending' },
-  { id: 'ready', label: 'Ready for review', detail: 'The product workspace is ready for a human decision.', state: 'pending' },
+  { id: 'validate', label: 'Validate source URL', detail: 'Checking that this is a permitted public HTTP(S) product URL.', state: 'pending' },
+  { id: 'extract', label: 'Recover public evidence', detail: 'Reading only public HTML, structured metadata, and visible product facts from this exact source.', state: 'pending' },
+  { id: 'normalize', label: 'Build source-bound workspace', detail: 'Mapping recovered facts, variants, and media without guessing missing product details.', state: 'pending' },
+  { id: 'review', label: 'Ready for evidence review', detail: 'The record is available for human review; market research is requested separately.', state: 'pending' },
 ]
 
 export const buildOptimizationEvents = (): JobEvent[] => [
