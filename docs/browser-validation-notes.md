@@ -53,3 +53,7 @@ The staged import completed into the product workspace. Variant selection, evide
 ## Local-first production deployment validation — 2026-08-11
 
 The isolated production deployment at `https://aibay-pro.pages.dev` displays the revised local-first interface. The settings item and disconnected-credentials notice are absent from the visible navigation. The health endpoint returned `ok: true` with `environment: production`; provider readiness remains false until separate, authorized external service credentials are configured.
+
+## Capability panel validation — 2026-08-11
+
+The responsive capability panel rendered in the local browser preview. Its `Check routes` control invoked a real request and, because the static Vite preview does not serve Pages Functions, displayed the truthful local-mode fallback toast rather than a false provider-ready result. The Pages runtime endpoint itself returned the expected local evidence-engine capability response in a direct API test.
