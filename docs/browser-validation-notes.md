@@ -25,3 +25,11 @@ After the Media Studio enhancements, the cache-busted preview still renders the 
 ## 2026-08-11 — Media Studio
 
 The final Media Studio renders with the source image preview, review-gate status, source dimensions and origin, selectable gallery assets, an **Add image** upload control, explicit rights confirmation, and the 2,000 × 2,000 derivative action. The interface states that product identity, labels, colour, material, and proportions must be preserved, and that the derivative is never published automatically.
+
+## Cloudflare authorization handoff
+
+The Cloudflare Pages project and GitHub source are configured through the account connection. The browser dashboard encountered a CAPTCHA before a direct deployment credential could be created. A separate dashboard tab was opened for the user to complete Cloudflare authorization directly. No API token, account password, or CAPTCHA solution has been stored in the repository or application.
+
+## Production deployment verification — 2026-08-11
+
+The Cloudflare Pages production deployment at `https://74493211.aibay.pages.dev` renders the AiBay workspace successfully. The deployed health endpoint responds with HTTP 200 and a valid API payload. At this stage, provider readiness correctly remains false for eBay, AI, and database services because no corresponding production integration credentials have been configured. The Pages Functions bundle is therefore active, while external-provider access remains deliberately disabled.
