@@ -101,3 +101,7 @@ The local workspace now exposes a `Research lab` navigation item. The responsive
 ## Research Lab end-to-end validation — 2026-08-16
 
 A candidate with source URL, title, brand, model, and price was submitted through the browser. The UI returned a completed evidence-aware ranking, preserved the exact source URL, displayed a score, and explicitly stated that the score is not a sales prediction or live demand claim.
+
+## Autonomous-platform production validation — 2026-08-16
+
+Deployment preview `https://a811df7b.aibay-pro.pages.dev` served the new capability-aware workspace. The production navigation exposed `Research lab`, and the browser rendered its candidate input rows and Normalize and rank action successfully. The preview was deployed from commit `0fe4b0b` to the isolated `aibay-pro` Pages project.
