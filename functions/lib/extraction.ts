@@ -1,6 +1,6 @@
 import { assertSafePublicUrl } from './security'
 
-import { adapterFor, normalizePublicSource, redirectDiagnostic, sessionRedirectDiagnostic, type SourceDiagnostic } from './source-adapters'
+import { adapterFor, normalizePublicSource, redirectDiagnostic, sessionRedirectDiagnostic, unsupportedDiagnostic, type SourceDiagnostic } from './source-adapters'
 
 export type ExtractedEvidence = {
   label: string
@@ -49,9 +49,20 @@ function absoluteUrl(value: string | undefined, base: URL) {
 
 function emptyExtraction(sourceUrl: URL, canonicalUrl: string, diagnostic: SourceDiagnostic): ProductExtraction {
   return {
-    sourceUrl: sourceUrl.toString(), canonicalUrl, sourceHost: sourceUrl.hostname.replace(/^www\./, ''), title: '', description: '',
+    sourceUrl: sourceUrl.toString(), canonicalUrl, sourceHost: sourceUrl.hostname.replace(/^www\\./, ''), title: '', description: '',
     price: { value: null, currency: null }, media: [], fields: [], variants: [], sourceHealth: 'blocked',
     warnings: [diagnostic.reason], sourceDiagnostic: diagnostic, retrievedAt: new Date().toISOString(),
+  }
+}
+
+export function incompleteExtractionFromError(sourceUrl: string, errorMessage: string): ProductExtraction {
+  const sourceRoot = assertSafePublicUrl(sourceUrl)
+  const { adapter, url: attemptedUrl } = normalizePublicSource(sourceRoot)
+  const reason = `The exact public source returned no usable product record: ${errorMessage}`
+  return {
+    sourceUrl: sourceRoot.toString(), canonicalUrl: attemptedUrl.toString(), sourceHost: sourceRoot.hostname.replace(/^www\\./, ''), title: '', description: '',
+    price: { value: null, currency: null }, media: [], fields: [], variants: [], sourceHealth: 'incomplete',
+    warnings: [reason], sourceDiagnostic: { status: 'incomplete', reason, sourceHost: sourceRoot.hostname.replace(/^www\\./, ''), adapter: adapter.id, attemptedUrl: attemptedUrl.toString(), redirectCount: 0, redirectHosts: [sourceRoot.hostname.replace(/^www\\./, '')] }, retrievedAt: new Date().toISOString(),
   }
 }
 
@@ -157,8 +168,9 @@ export function sourceLooksBlocked(html: string, status: number) {
 
 export async function extractPublicProduct(sourceUrl: string, redirectCount = 0, visited = new Set<string>(), redirectHosts: string[] = []): Promise<ProductExtraction> {
   const sourceRoot = assertSafePublicUrl(sourceUrl)
-  const { adapter, url: fetchUrl } = normalizePublicSource(sourceRoot)
+  const { adapter, url: fetchUrl, kind } = normalizePublicSource(sourceRoot)
   const redirectTrail = redirectHosts.length ? redirectHosts : [fetchUrl.hostname.replace(/^www\./, '')]
+  if (redirectCount === 0 && ['document', 'image', 'search', 'listing', 'article'].includes(kind)) return emptyExtraction(sourceRoot, fetchUrl.toString(), unsupportedDiagnostic(sourceRoot, fetchUrl, adapter, kind))
   if (redirectCount >= 3) return emptyExtraction(sourceRoot, fetchUrl.toString(), redirectDiagnostic('redirect_limit', sourceRoot, fetchUrl, adapter, redirectCount, redirectTrail))
   if (visited.has(fetchUrl.toString())) return emptyExtraction(sourceRoot, fetchUrl.toString(), redirectDiagnostic('redirect_loop', sourceRoot, fetchUrl, adapter, redirectCount, redirectTrail))
   visited.add(fetchUrl.toString())

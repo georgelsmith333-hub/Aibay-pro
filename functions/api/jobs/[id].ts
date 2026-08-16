@@ -7,18 +7,14 @@ export const onRequestGet = async ({ request, env, params }: RequestContext): Pr
   const context = getContext(request, env)
   const id = String(params.id || '')
   if (!id) return json({ error: 'job_id_required' }, { status: 400 }, context.requestId)
-
   return json({
     jobId: id,
-    status: env.APP_ENV === 'production' ? 'queued' : 'demo_ready',
-    source: 'server-job-store',
-    events: [
-      { id: 'validate', label: 'Validate source', state: 'complete' },
-      { id: 'extract', label: 'Extract evidence', state: 'complete' },
-      { id: 'normalize', label: 'Normalize product', state: 'active' },
-      { id: 'research', label: 'Research eBay US', state: 'pending' },
-      { id: 'ready', label: 'Ready for review', state: 'pending' },
-    ],
+    status: 'not_persisted',
+    persistence: 'request_only',
+    message: 'This Pages deployment does not have a durable queue or job-store binding. The original request response contains the authoritative planning and execution snapshot.',
+    events: [],
     updatedAt: new Date().toISOString(),
+    retryable: false,
+    requiredInfrastructure: ['durable job store', 'queue or background worker'],
   }, {}, context.requestId)
 }

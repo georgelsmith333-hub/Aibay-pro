@@ -1,10 +1,10 @@
-type ProviderStatus = 'ready' | 'sleeping' | 'building' | 'unavailable' | 'unsupported'
+import { buildRegistry, type RegistryStatus } from '../lib/registry'
 
 type ProviderCapability = {
   id: string
   label: string
   category: 'local' | 'public-gradio'
-  status: ProviderStatus
+  status: RegistryStatus
   capabilities: string[]
   details: string
   provenance: string
@@ -34,21 +34,13 @@ async function inspectPublicGradioSpace(spaceId: string): Promise<ProviderCapabi
   const url = `https://huggingface.co/api/spaces/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`
   try {
     const response = await fetch(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(4_000) })
-    if (response.status === 429) {
-      return { id: `gradio:${spaceId}`, label: spaceId, category: 'public-gradio', status: 'unavailable', capabilities: [], details: 'Rate-limited by the provider. AiBay will not retry through alternate identities or routes.', provenance: 'Public Hugging Face Space metadata', checkedAt }
-    }
-    if (!response.ok) {
-      return { id: `gradio:${spaceId}`, label: spaceId, category: 'public-gradio', status: 'unavailable', capabilities: [], details: `Provider metadata returned HTTP ${response.status}.`, provenance: 'Public Hugging Face Space metadata', checkedAt }
-    }
+    if (response.status === 429) return { id: `gradio:${spaceId}`, label: spaceId, category: 'public-gradio', status: 'rate_limited', capabilities: [], details: 'Rate-limited by the provider. AiBay will not retry through alternate identities or routes.', provenance: 'Public Hugging Face Space metadata', checkedAt }
+    if (!response.ok) return { id: `gradio:${spaceId}`, label: spaceId, category: 'public-gradio', status: 'unavailable', capabilities: [], details: `Provider metadata returned HTTP ${response.status}.`, provenance: 'Public Hugging Face Space metadata', checkedAt }
     const data = await response.json() as { runtime?: { stage?: string }; cardData?: { sdk?: string }; private?: boolean }
-    if (data.private || data.cardData?.sdk !== 'gradio') {
-      return { id: `gradio:${spaceId}`, label: spaceId, category: 'public-gradio', status: 'unsupported', capabilities: [], details: 'This route is not an approved public Gradio Space.', provenance: 'Public Hugging Face Space metadata', checkedAt }
-    }
+    if (data.private || data.cardData?.sdk !== 'gradio') return { id: `gradio:${spaceId}`, label: spaceId, category: 'public-gradio', status: 'unsupported', capabilities: [], details: 'This route is not an approved public Gradio Space.', provenance: 'Public Hugging Face Space metadata', checkedAt }
     const stage = data.runtime?.stage?.toUpperCase() || 'UNKNOWN'
-    const status: ProviderStatus = stage === 'RUNNING' ? 'ready' : stage === 'SLEEPING' ? 'sleeping' : stage === 'BUILDING' ? 'building' : 'unavailable'
-    const details = status === 'ready'
-      ? 'Public metadata indicates that the Space is running. Its documented API schema must still match the requested task before use.'
-      : `Public metadata reports ${stage.toLowerCase()}. No inference request was sent.`
+    const status: RegistryStatus = stage === 'RUNNING' ? 'ready' : stage === 'SLEEPING' ? 'degraded' : stage === 'BUILDING' ? 'degraded' : 'unavailable'
+    const details = status === 'ready' ? 'Public metadata indicates that the Space is running. Its documented API schema must still match the requested task before use.' : `Public metadata reports ${stage.toLowerCase()}. No inference request was sent.`
     return { id: `gradio:${spaceId}`, label: spaceId, category: 'public-gradio', status, capabilities: status === 'ready' ? ['schema-discovery'] : [], details, provenance: 'Public Hugging Face Space metadata', checkedAt }
   } catch {
     return { id: `gradio:${spaceId}`, label: spaceId, category: 'public-gradio', status: 'unavailable', capabilities: [], details: 'Provider metadata did not respond within the bounded health-check window.', provenance: 'Public Hugging Face Space metadata', checkedAt }
@@ -56,24 +48,19 @@ async function inspectPublicGradioSpace(spaceId: string): Promise<ProviderCapabi
 }
 
 export const onRequestGet = async ({ env }: PagesContext): Promise<Response> => {
-  const checkedAt = new Date().toISOString()
-  const local: ProviderCapability = {
-    id: 'local-evidence-engine',
-    label: 'Local evidence engine',
-    category: 'local',
-    status: 'ready',
-    capabilities: ['source evidence review', 'variant selection', 'deterministic listing draft', 'draft export', 'rights-gated media review'],
-    details: 'Runs without external AI or marketplace credentials and never represents sample comparisons as live market data.',
-    provenance: 'AiBay local runtime',
-    checkedAt,
-  }
+  const registry = buildRegistry(env)
+  const local = registry.providers.find((provider) => provider.id === 'local.evidence')
+  const checkedAt = registry.checkedAt
   const publicProviders = await Promise.all(configuredSpaces(env).map(inspectPublicGradioSpace))
-  const recommended = local
   return json({
     status: 'ok',
     checkedAt,
-    recommendation: { id: recommended.id, label: recommended.label, reason: 'Local evidence work is available immediately and is the only route selected automatically.' },
-    providers: [local, ...publicProviders],
-    policy: { automaticInference: false, externalRequests: 'metadata-only', rateLimitBehavior: 'respect-provider-response', maxConfiguredPublicSpaces: MAX_PUBLIC_SPACES },
+    recommendation: { id: 'local.evidence', label: local?.label || 'Local evidence engine', reason: 'Local evidence work is available immediately and is the only route selected automatically.' },
+    providers: [
+      { id: 'local-evidence-engine', label: local?.label || 'Local evidence engine', category: 'local', status: 'ready', capabilities: local?.capabilities || [], details: local?.details || '', provenance: 'AiBay local runtime', checkedAt },
+      ...publicProviders,
+    ],
+    registry,
+    policy: { automaticInference: false, externalRequests: 'metadata-only-unless-configured', rateLimitBehavior: 'respect-provider-response', maxConfiguredPublicSpaces: MAX_PUBLIC_SPACES, credentials: 'server-only' },
   })
 }

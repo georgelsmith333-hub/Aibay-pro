@@ -91,7 +91,7 @@ export interface OptimizationRun {
   mediaPlan: Array<{ mediaId: string; action: string; reason: string }>
 }
 
-export type SourceDiagnosticStatus = 'public_evidence' | 'session_required' | 'access_controlled' | 'redirect_loop' | 'redirect_limit' | 'incomplete'
+export type SourceDiagnosticStatus = 'public_evidence' | 'session_required' | 'access_controlled' | 'redirect_loop' | 'redirect_limit' | 'incomplete' | 'unsupported'
 
 export interface SourceDiagnostic {
   status: SourceDiagnosticStatus

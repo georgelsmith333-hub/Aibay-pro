@@ -93,3 +93,11 @@ The isolated production extractor at `https://aibay-pro.pages.dev/api/products/e
 ## Production recovery-interface validation — 2026-08-11
 
 The deployed `https://aibay-pro.pages.dev` interface was tested with the supplied AliExpress URL. It rendered the session-dependent source explanation, the adapter and redirect-path diagnostic, safe alternatives, the manual-evidence continuation form, and a visibly paused import timeline. No unrelated product, image, variant, or market data was displayed.
+
+## Research Lab browser validation — 2026-08-16
+
+The local workspace now exposes a `Research lab` navigation item. The responsive surface rendered candidate source URL, product title, brand, model/SKU, price inputs, an Add row control, and a Normalize and rank action. The page explains that scoring is evidence-aware and does not claim live demand from incomplete data.
+
+## Research Lab end-to-end validation — 2026-08-16
+
+A candidate with source URL, title, brand, model, and price was submitted through the browser. The UI returned a completed evidence-aware ranking, preserved the exact source URL, displayed a score, and explicitly stated that the score is not a sales prediction or live demand claim.

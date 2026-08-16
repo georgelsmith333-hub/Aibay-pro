@@ -27,6 +27,15 @@ export function json<T>(payload: T, init: ResponseInit = {}, requestId?: string)
   return new Response(JSON.stringify(payload), { ...init, headers })
 }
 
+function isPrivateIpLiteral(hostname: string) {
+  const host = hostname.replace(/^\\[|\\]$/g, '').toLowerCase()
+  if (host === '::1' || host === '::' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80:') || host.startsWith('::ffff:127.') || host.startsWith('::ffff:10.') || host.startsWith('::ffff:192.168.')) return true
+  const octets = host.split('.').map((part) => Number(part))
+  if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return false
+  const [a, b] = octets
+  return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || (a === 198 && b >= 18 && b <= 19) || a >= 224
+}
+
 export function assertSafePublicUrl(rawUrl: string) {
   let parsed: URL
   try {
@@ -40,6 +49,7 @@ export function assertSafePublicUrl(rawUrl: string) {
   if (hostname === 'localhost' || hostname.endsWith('.localhost') || hostname === '0.0.0.0' || hostname === '127.0.0.1' || hostname === '::1') {
     throw new Error('Local-network URLs are not accepted.')
   }
+  if (isPrivateIpLiteral(hostname)) throw new Error('Private or reserved IP destinations are not accepted.')
   if (hostname.endsWith('.internal') || hostname.endsWith('.local')) throw new Error('Private-network hostnames are not accepted.')
   return parsed
 }

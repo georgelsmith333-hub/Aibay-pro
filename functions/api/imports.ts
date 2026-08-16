@@ -1,5 +1,7 @@
 import { assertSafePublicUrl, getContext, json, normalizeInputString } from '../lib/security'
 
+import { createJobSnapshot, validateSourceForTask } from '../lib/orchestrator'
+
 type Env = Record<string, string | undefined>
 type RequestContext = { request: Request; env: Env }
 type ImportBody = {
@@ -25,6 +27,7 @@ export const onRequestPost = async ({ request, env }: RequestContext): Promise<R
   let parsedUrl: URL
   try {
     parsedUrl = assertSafePublicUrl(sourceUrl)
+    validateSourceForTask('product_import', parsedUrl.toString())
   } catch (error) {
     return json({ error: 'unsafe_source_url', message: error instanceof Error ? error.message : 'The source URL is not accepted.' }, { status: 422 }, context.requestId)
   }
@@ -38,13 +41,17 @@ export const onRequestPost = async ({ request, env }: RequestContext): Promise<R
     }, { status: 409 }, context.requestId)
   }
 
+  const job = createJobSnapshot(env, 'product_import', parsedUrl.toString(), 'request_only')
   return json({
-    jobId: `imp_${crypto.randomUUID().replaceAll('-', '').slice(0, 16)}`,
+    jobId: job.jobId,
     idempotencyKey,
-    status: 'queued',
-    source: { url: parsedUrl.toString(), host: parsedUrl.hostname.replace(/^www\./, ''), accessTier: 'public_metadata' },
-    stages: ['validate', 'extract', 'normalize', 'map_variants', 'validate_output', 'research_ebay'],
+    status: job.status,
+    source: { url: parsedUrl.toString(), host: parsedUrl.hostname.replace(/^www\\./, ''), accessTier: 'public_metadata' },
+    route: job.route,
+    stages: job.events,
+    job,
     demoMode: env.APP_ENV !== 'production',
     createdAt: new Date().toISOString(),
+    persistence: 'request_only',
   }, { status: 202 }, context.requestId)
 }

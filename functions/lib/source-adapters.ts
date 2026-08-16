@@ -1,4 +1,4 @@
-export type SourceDiagnosticStatus = 'public_evidence' | 'session_required' | 'access_controlled' | 'redirect_loop' | 'redirect_limit' | 'incomplete'
+export type SourceDiagnosticStatus = 'public_evidence' | 'session_required' | 'access_controlled' | 'redirect_loop' | 'redirect_limit' | 'incomplete' | 'unsupported'
 
 export type SourceDiagnostic = {
   status: SourceDiagnosticStatus
@@ -10,11 +10,26 @@ export type SourceDiagnostic = {
   redirectHosts: string[]
 }
 
+export type SourceKind = 'product' | 'listing' | 'search' | 'document' | 'image' | 'article' | 'unknown'
+
 type SourceAdapter = {
   id: string
   matches: (url: URL) => boolean
   normalize: (url: URL) => URL
   requiresSessionForRedirect?: (url: URL) => boolean
+}
+
+const documentExtension = /\.(?:pdf|docx?|xlsx?|pptx?)$/i
+const imageExtension = /\.(?:png|jpe?g|webp|gif|avif|svg)$/i
+
+export function classifySourceKind(url: URL): SourceKind {
+  if (documentExtension.test(url.pathname)) return 'document'
+  if (imageExtension.test(url.pathname)) return 'image'
+  if (/[?&](q|query|search)=/i.test(url.search) || /\/search(?:\/|$)|\/s(?:\/|$)/i.test(url.pathname)) return 'search'
+  if (/\/item\/|\/product\/|\/dp\/|\/p\//i.test(url.pathname)) return 'product'
+  if (/\/category\/|\/collections?\/|\/shop\/|\/browse\//i.test(url.pathname)) return 'listing'
+  if (/\/blog\/|\/article\/|\/news\//i.test(url.pathname)) return 'article'
+  return 'unknown'
 }
 
 const trackingParameter = /^(?:utm_[^=]+|gclid|fbclid|msclkid|_t|spm|gps-id|scm|scm_id|scm-url|pvid|pdp_ext_f|pdp_npi|utparam-url|curPageLogUid|browser_id|aff_trace_key|aff_platform|m_page_id|ref|ref_)$/i
@@ -51,7 +66,8 @@ export function adapterFor(url: URL): SourceAdapter {
 
 export function normalizePublicSource(url: URL) {
   const adapter = adapterFor(url)
-  return { adapter, url: adapter.normalize(url) }
+  const normalized = adapter.normalize(url)
+  return { adapter, url: normalized, kind: classifySourceKind(normalized) }
 }
 
 export function sessionRedirectDiagnostic(sourceUrl: URL, attemptedUrl: URL, adapter: SourceAdapter, redirectCount: number, redirectHosts: string[]): SourceDiagnostic {
@@ -63,6 +79,18 @@ export function sessionRedirectDiagnostic(sourceUrl: URL, attemptedUrl: URL, ada
     attemptedUrl: attemptedUrl.toString(),
     redirectCount,
     redirectHosts,
+  }
+}
+
+export function unsupportedDiagnostic(sourceUrl: URL, attemptedUrl: URL, adapter: SourceAdapter, kind: SourceKind): SourceDiagnostic {
+  return {
+    status: 'unsupported',
+    reason: `This source was identified as a ${kind} resource, but the current product importer has no safe structured adapter for it. Use a permitted product page or continue with user-provided evidence.`,
+    sourceHost: sourceUrl.hostname.replace(/^www\\./, ''),
+    adapter: adapter.id,
+    attemptedUrl: attemptedUrl.toString(),
+    redirectCount: 0,
+    redirectHosts: [sourceUrl.hostname.replace(/^www\\./, '')],
   }
 }
 
