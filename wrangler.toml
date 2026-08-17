@@ -1,4 +1,4 @@
-name = "aibay"
+name = "aibay-pro-george-live"
 compatibility_date = "2026-08-08"
 pages_build_output_dir = "dist"
 
@@ -7,22 +7,19 @@ APP_ENV = "production"
 DEFAULT_MARKETPLACE = "EBAY_US"
 PUBLIC_API_VERSION = "v1"
 
-# Secrets (configure via `wrangler pages secret put` / GitHub Actions; never commit):
-#   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, BROWSER_RUN_CANARY
-#   EBAY_CLIENT_ID, EBAY_CLIENT_SECRET
-#   AI_ROUTES (JSON), AI_PROVIDER_API_KEY / _BASE_URL / _MODEL (legacy)
-#
-# Durable bindings are materialized by scripts/ensure-infra.mjs during
-# deployment (D1 "aibay-db", KV "aibay-cache", R2 "aibay-media",
-# Queue "aibay-jobs") and appended below as "# --- generated bindings ---".
-# Local dev runs without bindings: every feature falls back to request-only
-# behavior and reports it truthfully.
-
-# --- generated bindings ---
 [[d1_databases]]
 binding = "DB"
-database_name = "aibay-db"
-database_id = "1ad4f6fa-9a18-41e2-b0e7-4b32876383e8"
+database_name = "aibay-george-db"
+database_id = "3267a266-8716-45dc-9e61-13bf8e285962"
+
 [[kv_namespaces]]
 binding = "CACHE_KV"
-id = "f462c0f312a14172b72b1ecd3371d55d"
+id = "d16729d9dea5429f92a0c27f05c25757"
+
+[[r2_buckets]]
+binding = "MEDIA_BUCKET"
+bucket_name = "aibay-george-media"
+
+[[queues.producers]]
+binding = "JOB_QUEUE"
+queue = "aibay-george-research"
