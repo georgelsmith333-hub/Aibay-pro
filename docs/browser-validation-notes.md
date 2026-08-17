@@ -105,3 +105,7 @@ A candidate with source URL, title, brand, model, and price was submitted throug
 ## Autonomous-platform production validation — 2026-08-16
 
 Deployment preview `https://a811df7b.aibay-pro.pages.dev` served the new capability-aware workspace. The production navigation exposed `Research lab`, and the browser rendered its candidate input rows and Normalize and rank action successfully. The preview was deployed from commit `0fe4b0b` to the isolated `aibay-pro` Pages project.
+
+## aibay-pro-live final browser validation — 2026-08-17
+
+The production root `https://aibay-pro-live.pages.dev` rendered the latest AiBay workspace. Navigation exposed Workspace, Research Lab, Mission Control, Tools, Market Pulse, Listing History, Media Studio, and Provider Center. Mission Control rendered its bounded research missions, opportunity scorer, price intelligence, and evidence graph controls. The page visibly reported the free/local engine as ready and retained the no-CAPTCHA-bypass, source-provenance, and review-gated product workflow.
