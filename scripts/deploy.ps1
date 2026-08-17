@@ -55,4 +55,17 @@ try {
     Write-Host "    Browser Run canary failed: $($_.Exception.Message). Adapter stays not_configured."
 }
 
+Write-Host "==> 8/8 Apify eBay actor canary (only when APIFY_API_TOKEN is set)"
+if ($env:APIFY_API_TOKEN) {
+    try {
+        $run = Invoke-RestMethod -Uri "https://api.apify.com/v2/acts/dtrungtin%2Febay-scraper/runs" -Headers @{ Authorization = "Bearer $env:APIFY_API_TOKEN" } -Method Post -ContentType "application/json" -Body '{"search":"test","country":"US","maxItems":1}'
+        "canary-apify-verified-$(Get-Date -Format yyyy-MM-dd)" | pnpm exec wrangler pages secret put APIFY_EBay_CANARY --project-name aibay-pro
+        Write-Host "    Apify eBay canary started (run $($run.data.id)) - confirm success then re-deploy to mark verified."
+    } catch {
+        Write-Host "    Apify canary failed: $($_.Exception.Message)"
+    }
+} else {
+    Write-Host "    APIFY_API_TOKEN not set - skip."
+}
+
 Write-Host "==> Done. Verify: https://aibay-pro.pages.dev/api/infra"

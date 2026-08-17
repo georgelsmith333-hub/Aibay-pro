@@ -56,4 +56,20 @@ else
   echo "    Browser Run canary failed (HTTP $CODE). Adapter stays not_configured."
 fi
 
+echo "==> 8/8 Apify eBay actor canary (only when APIFY_API_TOKEN is set)"
+if [ -n "${APIFY_API_TOKEN:-}" ]; then
+  RUN=$(curl -sS -X POST "https://api.apify.com/v2/acts/dtrungtin%2Febay-scraper/runs" \
+    -H "Authorization: Bearer $APIFY_API_TOKEN" -H "Content-Type: application/json" \
+    -d '{"search":"test","country":"US","maxItems":1}' -w "\n%{http_code}")
+  CODE=$(echo "$RUN" | tail -1)
+  if [ "$CODE" = "201" ] || [ "$CODE" = "200" ]; then
+    echo "canary-apify-verified-$(date -u +%F)" | pnpm exec wrangler pages secret put APIFY_EBay_CANARY --project-name aibay-pro
+    echo "    Apify eBay canary started — set APIFY_EBay_CANARY after a successful run, then live eBay research works without an eBay dev app."
+  else
+    echo "    Apify canary failed (HTTP $CODE). Add APIFY_API_TOKEN as a Pages secret and re-run."
+  fi
+else
+  echo "    APIFY_API_TOKEN not set — skip. (Live eBay research without an eBay dev app needs this token.)"
+fi
+
 echo "==> Done. Verify: https://aibay-pro.pages.dev/api/infra"

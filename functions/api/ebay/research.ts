@@ -1,3 +1,4 @@
+import { apifyEbaySearch, apifyEbayStatus } from '../../lib/apify'
 import { getContext, json, normalizeInputString } from '../../lib/security'
 
 type Env = Record<string, string | undefined>
@@ -43,7 +44,42 @@ export const onRequestPost = async ({ request, env }: RequestContext): Promise<R
 
   try {
     const token = await getToken(env)
-    if (!token) return json({ error: 'ebay_credentials_required', message: 'Configure an approved eBay Developer application before live research.' }, { status: 412 }, context.requestId)
+    // No official eBay Developer application? Use the documented Apify eBay
+    // actor path (operator's own Apify token) — the compliant alternative
+    // that needs no eBay dev app. Never fake live data when neither is set.
+    if (!token) {
+      const apify = apifyEbayStatus(env)
+      if (apify.status === 'ready') {
+        const result = await apifyEbaySearch(env, query, limit)
+        const listings = result.items.map((item, index) => ({
+          id: `apify_${result.runId.slice(0, 8)}_${index}`,
+          title: item.title || 'Untitled listing',
+          url: item.url || 'https://www.ebay.com/',
+          image: item.image || '',
+          price: item.price ?? 0,
+          shipping: 0,
+          currency: item.currency || 'USD',
+          condition: item.condition || 'Not supplied',
+          seller: item.seller || 'Not supplied',
+          feedback: 0,
+        }))
+        return json({
+          status: 'live',
+          provider: 'apify-ebay-scraper',
+          marketplace: 'EBAY_US',
+          query,
+          capturedAt: result.capturedAt,
+          resultCount: result.items.length,
+          listings,
+          provenance: { actorId: result.actorId, runId: result.runId, datasetId: result.datasetId, method: 'apify-documented-actor' },
+          note: 'Live eBay data via the documented Apify eBay actor (dataset-backed). Prices and fields are as returned by the actor; no values were fabricated.',
+        }, {}, context.requestId)
+      }
+      const message = apify.configured
+        ? 'APIFY_API_TOKEN is set but the eBay actor is not runtime-verified. Run the deployment canary to validate it, or configure an eBay Developer application.'
+        : 'Configure an approved eBay Developer application (EBAY_CLIENT_ID/EBAY_CLIENT_SECRET) or an Apify token (APIFY_API_TOKEN) before live research.'
+      return json({ error: 'ebay_credentials_required', message }, { status: 412 }, context.requestId)
+    }
     const url = new URL('https://api.ebay.com/buy/browse/v1/item_summary/search')
     url.searchParams.set('q', query)
     url.searchParams.set('limit', String(limit))
@@ -62,7 +98,7 @@ export const onRequestPost = async ({ request, env }: RequestContext): Promise<R
       seller: item.seller?.username || 'Not supplied',
       feedback: Number(item.seller?.feedbackPercentage || 0),
     }))
-    return json({ status: 'live', marketplace: 'EBAY_US', query, capturedAt: new Date().toISOString(), resultCount: data.total || listings.length, listings }, {}, context.requestId)
+    return json({ status: 'live', provider: 'ebay-browse-official', marketplace: 'EBAY_US', query, capturedAt: new Date().toISOString(), resultCount: data.total || listings.length, listings, note: 'Live data from the official eBay Browse API.' }, {}, context.requestId)
   } catch (error) {
     return json({ error: 'ebay_research_unavailable', message: error instanceof Error ? error.message : 'Unable to query eBay right now.' }, { status: 503 }, context.requestId)
   }
