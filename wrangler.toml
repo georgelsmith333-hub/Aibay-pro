@@ -17,3 +17,12 @@ PUBLIC_API_VERSION = "v1"
 # Queue "aibay-jobs") and appended below as "# --- generated bindings ---".
 # Local dev runs without bindings: every feature falls back to request-only
 # behavior and reports it truthfully.
+
+# --- generated bindings ---
+[[d1_databases]]
+binding = "DB"
+database_name = "aibay-db"
+database_id = "1ad4f6fa-9a18-41e2-b0e7-4b32876383e8"
+[[kv_namespaces]]
+binding = "CACHE_KV"
+id = "f462c0f312a14172b72b1ecd3371d55d"
