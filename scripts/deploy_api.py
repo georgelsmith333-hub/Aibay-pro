@@ -77,7 +77,32 @@ def ensure_project():
 
 def get_upload_token():
     print("==> 2/5 Getting upload token (JWT)")
-    result = request(f"/pages/projects/{PROJECT}/upload-token", "POST")
+    try:
+        result = request(f"/pages/projects/{PROJECT}/upload-token", "POST")
+    except urllib.error.HTTPError as e:
+        if e.code == 405 or e.code == 403:
+            print("")
+            print("    !!! PERMISSION ERROR: your Cloudflare API token cannot upload to Pages.")
+            print("    The token is active but is missing the required permission:")
+            print("        Account -> Cloudflare Pages -> Edit")
+            print("    Fix it in the dashboard (30 seconds):")
+            print("      1. https://dash.cloudflare.com/profile/api-tokens")
+            print("      2. Find this token -> Edit")
+            print("      3. Permissions: add  Account -> Cloudflare Pages -> Edit")
+            print("      4. Save, then re-run ./scripts/deploy.sh")
+            print("    (Project creation works with your current token; uploading does not.)")
+            sys.exit(2)
+        raise
+    result = None
+    try:
+        result = request(f"/pages/projects/{PROJECT}/upload-token", "POST")
+    except urllib.error.HTTPError:
+        pass
+    if result is None:
+        # Retry once (the API sometimes needs the project to be fully provisioned)
+        import time
+        time.sleep(3)
+        result = request(f"/pages/projects/{PROJECT}/upload-token", "POST")
     jwt = result.get("result", {}).get("jwt")
     if not jwt:
         print("    ERROR: upload-token response had no jwt:", json.dumps(result)[:300])
