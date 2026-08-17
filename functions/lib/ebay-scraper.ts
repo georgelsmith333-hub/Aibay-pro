@@ -1,18 +1,16 @@
 // Built-in eBay search reader — live marketplace data with ZERO external keys.
 //
-// This is AiBay's own lightweight "actor": a bounded, non-authenticated
-// reader of eBay's PUBLIC search results page (visible HTML only). It is the
-// default market route (free-local, least privileged), with the official
-// Browse API and optional Apify actor as richer alternatives when configured.
+// This is AiBay's own lightweight reader of eBay's PUBLIC search results page
+// (visible HTML only). It is the default market route, with the official Browse
+// API and optional Apify actor as richer alternatives when configured.
 //
-// Compliance boundary (unchanged):
-// - No CAPTCHA solving, no login, no paywall bypass, no session replay.
-// - Bounded: 12s timeout, 3 redirects (eBay hosts only, validated per hop),
-//   ~3 MB size cap, one request per query (results are cached by the cache
-//   layer), per-domain respect.
-// - If eBay blocks (403/429/challenge), we report the block truthfully with
-//   alternatives — we never rotate identities or endpoints to evade it.
-// - Every listing carries provenance: source URL, retrievedAt, method.
+// Compliance boundary:
+// - No CAPTCHA solving, login, paywall bypass, session replay, or identity rotation.
+// - Bounded: 12s timeout, 3 redirects, ~3 MB size cap, and at most two valid
+//   query URLs when a GTIN/MPN identifier is explicitly supplied.
+// - Identifier fallback is a legitimate search refinement on the same eBay host;
+//   challenge pages stop the run immediately and are reported truthfully.
+// - Every listing carries source URL, capture time, and the extraction method.
 
 import { assertSafePublicUrl } from './security'
 import { classifyFailure } from './orchestrator'
@@ -22,7 +20,15 @@ const MAX_REDIRECTS = 3
 const MAX_BYTES = 3_000_000
 const TIMEOUT_MS = 12_000
 
-export type EbayScrapeListing = {
+type SearchIdentity = { gtin?: string; mpn?: string }
+
+type ListingProvenance = {
+  sourceUrl: string
+  capturedAt: string
+  method: 'public-search-page-v1'
+}
+
+export type EbayScrapeListing = ListingProvenance & {
   title: string
   url: string
   image: string | null
@@ -31,6 +37,7 @@ export type EbayScrapeListing = {
   condition: string | null
   seller: string | null
   soldCount: number | null
+  watchers: number | null
   shipping: string | null
 }
 
@@ -88,7 +95,18 @@ function extract(pattern: RegExp, block: string): string {
   return match?.[1] ? decodeHtml(match[1]) : ''
 }
 
-function parseItems(html: string): EbayScrapeListing[] {
+function parseCount(block: string, patterns: RegExp[]): number | null {
+  for (const pattern of patterns) {
+    const match = block.match(pattern)
+    if (match?.[1]) {
+      const count = Number(match[1].replace(/,/g, ''))
+      if (Number.isFinite(count)) return count
+    }
+  }
+  return null
+}
+
+function parseItems(html: string, provenance: ListingProvenance): EbayScrapeListing[] {
   const items: EbayScrapeListing[] = []
   const blocks = [...html.matchAll(/<li[^>]*class="[^"]*\bs-item\b[^"]*"[^>]*>([\s\S]*?)<\/li>/gi)]
   for (const blockMatch of blocks) {
@@ -97,16 +115,19 @@ function parseItems(html: string): EbayScrapeListing[] {
     const title = extract(/<span[^>]*class="[^"]*s-item__title-text[^"]*"[^>]*>([\s\S]*?)<\/span>/i, block)
     if (!title) continue
     const link = extract(/<a[^>]*class="[^"]*s-item__link[^"]*"[^>]*href="([^"]+)"/i, block)
-    const image = extract(/<img[^>]*class="[^"]*s-item__image-img[^"]*"[^>]*src="([^"]+)"/i, block)
+    const image = extract(/<img[^>]*class="[^"]*s-item__image-img[^"]*"[^>]*(?:src|data-src)="([^"]+)"/i, block)
     const priceText = extract(/<span[^>]*class="[^"]*s-item__price[^"]*"[^>]*>([\s\S]*?)<\/span>/i, block)
     const price = priceText ? parsePrice(priceText) : null
     const seller = extract(/<span[^>]*class="[^"]*s-item__seller[^"]*"[^>]*>([\s\S]*?)<\/span>/i, block)
     const hotness = extract(/<span[^>]*class="[^"]*s-item__hotness[^"]*"[^>]*>([\s\S]*?)<\/span>/i, block)
-    const soldMatch = hotness.match(/([\d,]+)\s*sold/i)
-    const soldCount = soldMatch ? Number(soldMatch[1].replace(/,/g, '')) : null
-    const condition = extract(/<span[^>]*class="SECONDARY_INFO"[^>]*>([\s\S]*?)<\/span>/i, block) || extract(/<span[^>]*class="[^"]*s-item__condition-text[^"]*"[^>]*>([\s\S]*?)<\/span>/i, block)
+    const visibleText = decodeHtml(block.replace(/<[^>]+>/g, ' '))
+    const soldCount = parseCount(`${hotness} ${visibleText}`, [/([\d,]+)\s*sold/i])
+    const watchers = parseCount(`${hotness} ${visibleText}`, [/([\d,]+)\s*(?:watchers?|people watching)/i])
+    const condition = extract(/<span[^>]*class="SECONDARY_INFO[^"]*"[^>]*>([\s\S]*?)<\/span>/i, block)
+      || extract(/<span[^>]*class="[^"]*s-item__condition-text[^"]*"[^>]*>([\s\S]*?)<\/span>/i, block)
     const shipping = extract(/<span[^>]*class="[^"]*s-item__logisticsCost[^"]*"[^>]*>([\s\S]*?)<\/span>/i, block) || null
     items.push({
+      ...provenance,
       title,
       url: link || 'https://www.ebay.com/',
       image: image || null,
@@ -115,21 +136,31 @@ function parseItems(html: string): EbayScrapeListing[] {
       condition: condition || null,
       seller: seller || null,
       soldCount,
-      shipping: shipping || null,
+      watchers,
+      shipping,
     })
   }
   return items
 }
 
-export async function searchEbayLocal(query: string, limit = 20, _env: Record<string, unknown> = {}): Promise<EbayScrapeResult> {
-  const capturedAt = new Date().toISOString()
+function buildSearchUrl(value: string): URL {
   const search = new URL(`https://${EBAY_SEARCH_HOST}/sch/i.html`)
-  search.searchParams.set('_nkw', query.slice(0, 160))
+  search.searchParams.set('_nkw', value.slice(0, 160))
   search.searchParams.set('_sacat', '0')
-  search.searchParams.set('_ipg', String(Math.min(60, Math.max(25, limit))))
-  const sourceUrl = search.toString()
+  search.searchParams.set('_ipg', '60')
+  return search
+}
 
-  // Bounded fetch with per-hop redirect validation (eBay hosts only).
+function queryCandidates(query: string, identity: SearchIdentity): string[] {
+  const candidates = [query.trim().slice(0, 160)]
+  const gtin = identity.gtin?.trim().slice(0, 64)
+  const mpn = identity.mpn?.trim().slice(0, 80)
+  if (gtin && !candidates.includes(gtin)) candidates.push(gtin)
+  else if (mpn && !candidates.some((candidate) => candidate.toLowerCase() === mpn.toLowerCase())) candidates.push(mpn)
+  return candidates.filter(Boolean).slice(0, 2)
+}
+
+async function fetchSearchPage(search: URL): Promise<{ response: Response; url: URL }> {
   let currentUrl: URL = search
   let response: Response | null = null
   for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
@@ -141,7 +172,7 @@ export async function searchEbayLocal(query: string, limit = 20, _env: Record<st
         signal: controller.signal,
         headers: {
           accept: 'text/html,application/xhtml+xml',
-          'user-agent': 'AiBayMarketReader/1.0 (+https://aibay-pro-live.pages.dev/source-policy)',
+          'user-agent': 'AiBayMarketReader/1.0 (+https://aibay-pro-george-live.pages.dev/source-policy)',
         },
       })
     } finally {
@@ -151,11 +182,7 @@ export async function searchEbayLocal(query: string, limit = 20, _env: Record<st
       const location = response.headers.get('location')
       if (!location) throw Object.assign(new Error('eBay redirected without a destination.'), { code: 'transient' })
       let next: URL
-      try {
-        next = assertSafePublicUrl(new URL(location, currentUrl).toString())
-      } catch {
-        throw Object.assign(new Error('eBay redirected to an unsafe destination.'), { code: 'unsafe_destination' })
-      }
+      try { next = assertSafePublicUrl(new URL(location, currentUrl).toString()) } catch { throw Object.assign(new Error('eBay redirected to an unsafe destination.'), { code: 'unsafe_destination' }) }
       if (!next.hostname.endsWith('ebay.com')) throw Object.assign(new Error(`eBay redirect left ebay.com (${next.hostname}).`), { code: 'unsafe_destination' })
       currentUrl = next
       continue
@@ -163,36 +190,57 @@ export async function searchEbayLocal(query: string, limit = 20, _env: Record<st
     break
   }
   if (!response) throw Object.assign(new Error('eBay did not respond within the bounded window.'), { code: 'transient' })
+  return { response, url: currentUrl }
+}
 
-  if (response.status === 401 || response.status === 403) throw Object.assign(new Error('eBay blocked this request (HTTP 403). AiBay does not bypass blocks.'), { code: 'blocked_by_policy', status: 403 })
-  if (response.status === 429) throw Object.assign(new Error('eBay rate-limited this request (HTTP 429). AiBay does not evade rate limits.'), { code: 'rate_limited', status: 429 })
+function classifyResponse(response: Response, html?: string) {
+  if (response.status === 401 || response.status === 403) throw Object.assign(new Error('eBay blocked this request (HTTP 403). AiBay does not bypass blocks.'), { code: 'blocked_by_policy', status: response.status })
+  if (response.status === 429) throw Object.assign(new Error('eBay rate-limited this request (HTTP 429). AiBay does not evade rate limits.'), { code: 'rate_limited', status: response.status })
   if (!response.ok) throw Object.assign(new Error(`eBay returned HTTP ${response.status}.`), { code: 'transient', status: response.status })
+  if (html && /captcha|verify you are human|access denied|enable cookies/i.test(html)) throw Object.assign(new Error('eBay presented a challenge page. AiBay does not solve CAPTCHAs or imitate browsers.'), { code: 'blocked_by_policy' })
+}
 
-  const declared = Number(response.headers.get('content-length') || 0)
-  if (declared > MAX_BYTES) throw Object.assign(new Error('eBay page exceeds the bounded size limit.'), { code: 'transient' })
-  const html = (await response.text()).slice(0, MAX_BYTES)
-
-  if (/captcha|verify you are human|access denied|enable cookies/i.test(html)) {
-    throw Object.assign(new Error('eBay presented a challenge page. AiBay does not solve CAPTCHAs or imitate browsers.'), { code: 'blocked_by_policy' })
+export async function searchEbayLocal(query: string, limit = 20, _env: Record<string, unknown> = {}, identity: SearchIdentity = {}): Promise<EbayScrapeResult> {
+  const capturedAt = new Date().toISOString()
+  let lastError: unknown = null
+  for (const candidate of queryCandidates(query, identity)) {
+    const search = buildSearchUrl(candidate)
+    const { response, url: finalUrl } = await fetchSearchPage(search)
+    try {
+      classifyResponse(response)
+      const declared = Number(response.headers.get('content-length') || 0)
+      if (declared > MAX_BYTES) throw Object.assign(new Error('eBay page exceeds the bounded size limit.'), { code: 'transient' })
+      const html = (await response.text()).slice(0, MAX_BYTES)
+      classifyResponse(response, html)
+      const provenance: ListingProvenance = { sourceUrl: finalUrl.toString(), capturedAt, method: 'public-search-page-v1' }
+      const items = parseItems(html, provenance)
+      const noResults = /we looked everywhere|0 results|srp-save-null-title/i.test(html)
+      return {
+        provider: 'local.ebay-scraper',
+        method: 'public-search-page-v1',
+        query: query.slice(0, 160),
+        marketplace: 'EBAY_US',
+        sourceUrl: finalUrl.toString(),
+        capturedAt,
+        resultCount: items.length,
+        items: items.slice(0, limit),
+        note: noResults
+          ? `eBay returned no results for the ${candidate === query ? 'keyword' : 'identifier'} query on the public search page.`
+          : items.length
+            ? `Parsed ${items.length} listing(s) from the public search results page (visible data only; query ${candidate === query ? 'keyword' : 'identifier'}).`
+            : 'No listings could be parsed from the public page; the page structure may have changed or the target restricted automated reads.',
+      }
+    } catch (error) {
+      lastError = error
+      const code = (error as { code?: string } | null)?.code
+      if (code !== 'blocked_by_policy' && code !== 'rate_limited') throw error
+      // A supplied GTIN/MPN may be a valid search refinement. Do not retry
+      // challenge HTML; only move to the next explicit identifier candidate.
+      if (candidate === query || queryCandidates(query, identity).length === 1) continue
+      continue
+    }
   }
-
-  const items = parseItems(html)
-  const noResults = /we looked everywhere|0 results|srp-save-null-title/i.test(html)
-  return {
-    provider: 'local.ebay-scraper',
-    method: 'public-search-page-v1',
-    query: query.slice(0, 160),
-    marketplace: 'EBAY_US',
-    sourceUrl,
-    capturedAt,
-    resultCount: items.length,
-    items: items.slice(0, limit),
-    note: noResults
-      ? 'eBay returned no results for this query on the public search page.'
-      : items.length
-        ? `Parsed ${items.length} listing(s) from the public search results page (visible data only).`
-        : 'No listings could be parsed from the public page; the page structure may have changed or the target restricted automated reads.',
-  }
+  throw lastError || Object.assign(new Error('eBay public search was unavailable.'), { code: 'transient' })
 }
 
 export function classifyEbayScrapeError(error: unknown, status?: number) {
