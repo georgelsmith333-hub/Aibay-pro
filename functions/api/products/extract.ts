@@ -5,7 +5,7 @@ import { assertSafePublicUrl, getContext, json, normalizeInputString } from '../
 type Env = Record<string, string | undefined>
 type RequestContext = { request: Request; env: Env }
 
-const CACHE_NAMESPACE = 'public-extraction'
+const CACHE_NAMESPACE = 'public-extraction-v2'
 const CACHE_TTL_SECONDS = 300
 
 function cacheMeta(health: CacheHealth, hit: boolean) {
