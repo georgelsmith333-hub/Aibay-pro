@@ -36,8 +36,7 @@ echo "    (R2/Queue are optional — if your plan needs enabling them in the das
 node scripts/ensure-infra.mjs
 
 echo "==> 3/7 Building production bundle"
-corepack enable 2>/dev/null || true
-pnpm install --frozen-lockfile
+pnpm install --frozen-lockfile 2>/dev/null || pnpm install
 pnpm check:functions
 pnpm lint
 pnpm build
