@@ -7,7 +7,8 @@ set -euo pipefail
 : "${CLOUDFLARE_API_TOKEN:?Set CLOUDFLARE_API_TOKEN (Cloudflare API token, full permissions)}"
 : "${CLOUDFLARE_ACCOUNT_ID:?Set CLOUDFLARE_ACCOUNT_ID}"
 PROJECT_NAME="${PROJECT_NAME:-aibay-pro-live}"
-cd "$(dirname "$0")/.."
+# Locate the repo regardless of where the script is invoked from
+cd "$(cd "$(dirname "$0")" && pwd)/.."
 
 if [ ! -f scripts/ensure-infra.mjs ]; then
   echo "ERROR: run this script from inside the AiBay repo (cd into the checkout first)." >&2
