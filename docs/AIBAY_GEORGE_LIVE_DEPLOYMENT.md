@@ -26,3 +26,9 @@ The existing `trynex` R2 bucket and the existing `aibay-pro` Pages project are n
 The application keeps provider and infrastructure states truthful. R2 media derivatives are only marked queued when an approved provider and the dedicated R2 and Queue bindings are available. Job state is durable only when the dedicated D1 and Queue bindings are present; otherwise the application uses request-scoped state and reports that limitation.
 
 R2 billing remains account-level usage-based. The dedicated AiBay bucket is separate from the existing Trynex bucket so usage and data remain logically isolated.
+
+## Final validation
+
+Deployment `3407eef4-3fa4-4d8d-9dc2-a2b3cbf7a07b` completed successfully from commit `f115441`. The production root returned HTTP 200 and the responsive workspace was visually verified at `https://aibay-pro-george-live.pages.dev/?release=3407eef4`.
+
+The production API reported durable D1, KV, R2, and Queue bindings. The D1 schema was applied and a temporary vault item was added and removed successfully, confirming durable persistence. Jobs reported durable queue-backed state. Profit calculation, keyword analysis, listing-package generation, and trend analysis returned completed evidence-gated responses. The eBay probe returned a truthful HTTP 403 blocked state; AiBay did not bypass it. Browser Run and Workers AI remain unconfigured because their optional server-side secrets were not added to this separate project.
