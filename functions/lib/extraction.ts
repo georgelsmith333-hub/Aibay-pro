@@ -233,11 +233,37 @@ export function sourceLooksBlocked(html: string, status: number) {
   return status === 401 || status === 403 || status === 429 || /captcha|recaptcha|hcaptcha|cf-chl-|verify you are human|access denied|enable cookies/i.test(html)
 }
 
+function resourceLabel(url: URL) {
+  const last = decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() || '').replace(/\.[a-z0-9]+$/i, '').replace(/[-_]+/g, ' ').trim()
+  return last ? last.replace(/\b\w/g, (letter) => letter.toUpperCase()) : `${url.hostname} resource`
+}
+
+function directResourceExtraction(sourceRoot: URL, fetchUrl: URL, adapter: { id: string }, kind: ExtractedResourceKind): ProductExtraction {
+  const label = resourceLabel(fetchUrl)
+  const retrievedAt = new Date().toISOString()
+  const isImage = kind === 'image'
+  return {
+    sourceUrl: sourceRoot.toString(), canonicalUrl: fetchUrl.toString(), sourceHost: sourceRoot.hostname.replace(/^www\\./, ''), sourceKind: kind, title: label,
+    description: isImage ? 'Direct image source. Add product facts manually or import a product page to build a complete listing record.' : 'Direct document source. Review the document and add product facts before exporting a listing draft.',
+    price: { value: null, currency: null },
+    media: isImage ? [{ url: fetchUrl.toString(), previewUrl: `/api/media/preview?url=${encodeURIComponent(fetchUrl.toString())}`, alt: `${label} source image`, sourcePath: 'Direct image URL' }] : [],
+    fields: [
+      { label: isImage ? 'Source image' : 'Source document', value: fetchUrl.toString(), state: 'verified', method: isImage ? 'Direct public image URL' : 'Direct public document URL', sourcePath: 'source-url', confidence: 90 },
+      { label: isImage ? 'Image host' : 'Document type', value: isImage ? sourceRoot.hostname.replace(/^www\\./, '') : (fetchUrl.pathname.match(/\\.([a-z0-9]+)$/i)?.[1]?.toUpperCase() || 'Document'), state: 'verified', method: 'URL resource classification', sourcePath: 'source-kind', confidence: 88 },
+    ],
+    variants: [], sourceHealth: 'incomplete', warnings: [isImage ? 'Only an image resource was supplied. Add product identity, specifications, and variants before export.' : 'Only a document resource was supplied. Review its contents and add product identity before export.'],
+    sourceDiagnostic: { status: 'incomplete', reason: isImage ? 'The image URL is attributable and previewable, but it does not contain a complete product record by itself.' : 'The document URL is attributable, but document contents require review before product facts can be claimed.', sourceHost: sourceRoot.hostname.replace(/^www\\./, ''), adapter: adapter.id, attemptedUrl: fetchUrl.toString(), redirectCount: 0, redirectHosts: [sourceRoot.hostname.replace(/^www\\./, '')] }, retrievedAt,
+  }
+}
+
+type ExtractedResourceKind = Extract<SourceKind, 'image' | 'document'>
+
 export async function extractPublicProduct(sourceUrl: string, redirectCount = 0, visited = new Set<string>(), redirectHosts: string[] = []): Promise<ProductExtraction> {
   const sourceRoot = assertSafePublicUrl(sourceUrl)
   const { adapter, url: fetchUrl, kind } = normalizePublicSource(sourceRoot)
   const redirectTrail = redirectHosts.length ? redirectHosts : [fetchUrl.hostname.replace(/^www\./, '')]
-  if (redirectCount === 0 && ['document', 'image', 'search', 'listing', 'article'].includes(kind)) return emptyExtraction(sourceRoot, fetchUrl.toString(), unsupportedDiagnostic(sourceRoot, fetchUrl, adapter, kind))
+  if (redirectCount === 0 && (kind === 'image' || kind === 'document')) return directResourceExtraction(sourceRoot, fetchUrl, adapter, kind)
+  if (redirectCount === 0 && ['search', 'listing', 'article'].includes(kind)) return emptyExtraction(sourceRoot, fetchUrl.toString(), unsupportedDiagnostic(sourceRoot, fetchUrl, adapter, kind))
   if (redirectCount >= 3) return emptyExtraction(sourceRoot, fetchUrl.toString(), redirectDiagnostic('redirect_limit', sourceRoot, fetchUrl, adapter, redirectCount, redirectTrail))
   if (visited.has(fetchUrl.toString())) return emptyExtraction(sourceRoot, fetchUrl.toString(), redirectDiagnostic('redirect_loop', sourceRoot, fetchUrl, adapter, redirectCount, redirectTrail))
   visited.add(fetchUrl.toString())
