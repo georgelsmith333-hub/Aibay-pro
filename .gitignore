@@ -27,3 +27,6 @@ dist-ssr
 .env
 .env.*
 !.env.example
+.infra.env
+# GitHub Actions workflow is added by the operator (bot cannot push workflow files)
+.github/

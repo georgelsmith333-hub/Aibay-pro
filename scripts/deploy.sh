@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# One-shot production deploy for AiBay Pro (run from your machine with the Cloudflare token).
+# Usage:  CLOUDFLARE_API_TOKEN=... CLOUDFLARE_ACCOUNT_ID=d016ca182921e04d445bb9238703f336 ./scripts/deploy.sh
+set -euo pipefail
+
+: "${CLOUDFLARE_API_TOKEN:?Set CLOUDFLARE_API_TOKEN (Cloudflare API token, full permissions)}"
+: "${CLOUDFLARE_ACCOUNT_ID:?Set CLOUDFLARE_ACCOUNT_ID}"
+cd "$(dirname "$0")/.."
+
+if [ ! -f scripts/ensure-infra.mjs ]; then
+  echo "ERROR: run this script from inside the AiBay repo (cd into the checkout first)." >&2
+  exit 1
+fi
+
+command -v pnpm >/dev/null 2>&1 || { echo "ERROR: pnpm not found. Install it with: npm install -g pnpm"; exit 1; }
+
+echo "==> 1/7 Verifying Cloudflare token"
+curl -fsS "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/tokens/verify" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" | head -c 200
+echo
+
+echo "==> 2/7 Ensuring infrastructure (D1, KV, R2, Queue)"
+node scripts/ensure-infra.mjs
+
+echo "==> 3/7 Building production bundle"
+corepack enable 2>/dev/null || true
+pnpm install --frozen-lockfile
+pnpm check:functions
+pnpm lint
+pnpm build
+
+echo "==> 4/7 Deploying to Cloudflare Pages (project: aibay-pro)"
+pnpm exec wrangler pages deploy dist --project-name aibay-pro --branch main --commit-dirty=true
+
+echo "==> 5/7 Applying D1 schema"
+set -a; source .infra.env; set +a
+if [ -n "${D1_ID:-}" ]; then
+  pnpm exec wrangler d1 execute aibay-db --remote --file infra/schema.d1.sql
+else
+  echo "    (D1 not available; schema skipped)"
+fi
+
+echo "==> 6/7 Setting runtime secrets"
+echo "$CLOUDFLARE_API_TOKEN" | pnpm exec wrangler pages secret put CLOUDFLARE_API_TOKEN --project-name aibay-pro
+echo "$CLOUDFLARE_ACCOUNT_ID" | pnpm exec wrangler pages secret put CLOUDFLARE_ACCOUNT_ID --project-name aibay-pro
+
+echo "==> 7/7 Browser Run canary (real quick action against example.com)"
+CANARY=$(curl -sS -X POST "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/browser-rendering/content" \
+  -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/"}' -w "\n%{http_code}")
+CODE=$(echo "$CANARY" | tail -1)
+BODY=$(echo "$CANARY" | head -n -1)
+if [ "$CODE" = "200" ] && echo "$BODY" | grep -qi "example"; then
+  echo "canary-verified-$(date -u +%F)" | pnpm exec wrangler pages secret put BROWSER_RUN_CANARY --project-name aibay-pro
+  echo "    Browser Run canary PASSED — adapter will report ready."
+else
+  echo "    Browser Run canary failed (HTTP $CODE). Adapter stays not_configured."
+fi
+
+echo "==> Done. Verify: https://aibay-pro.pages.dev/api/infra"

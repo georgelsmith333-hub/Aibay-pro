@@ -17,6 +17,9 @@ AiBay Pro is an evidence-backed product-research and eBay draft workspace that i
 | eBay research | `functions/api/ebay/research.ts` | Official Browse API adapter when configured; otherwise explicit non-live state |
 | Listing generation | `functions/lib/listing.ts`, `functions/api/products/optimize.ts` | Active deterministic draft engine with optional conservative AI title ranking |
 | Media | `functions/api/media/enhance.ts` | Rights-gated review contract; generation/storage not yet durable |
+| Cache and dedup | `functions/lib/cache.ts`, `functions/lib/dedup.ts` | Active interface layer: best-effort edge cache with an explicit request-only fallback, plus versioned identity-fingerprint deduplication with conflict labels |
+| Provider adapter contract | `functions/lib/adapter.ts`, `functions/lib/adapters.ts` | Active contract (`v1`) with one real adapter (`local.evidence`, wired through the router) and scaffold adapters that report `not_configured` truthfully |
+| Router execution | `functions/lib/execution.ts`, `functions/api/execute.ts` | Active bounded execution: route → adapter → normalize → provenance → validate → cache; retries and fallback recorded in an attempt trail |
 | Job state | `functions/api/imports.ts`, `functions/api/jobs/[id].ts` | Transitional synchronous/request-contract layer; durable queue/store not active |
 | Database/storage/queue | `wrangler.toml`, `infra/schema.sql` | Planned but not bound in the isolated Pages project |
 | Production | `https://aibay-pro.pages.dev` | Active isolated project; deployment is direct Wrangler upload because GitHub webhook builds are unreliable |
@@ -51,11 +54,11 @@ The system rejects unsafe URLs, credential-bearing URLs, private or loopback des
 
 ## Migration sequence
 
-1. Stabilize shared capability, provider, route, job, and provenance types.
-2. Replace the placeholder capability response with a formal registry that exposes configured versus local routes truthfully.
-3. Introduce deterministic route selection and failure classification while retaining the current direct extractor.
-4. Add cache and deduplication interfaces with an explicit request-only fallback until durable bindings are available.
-5. Add optional documented provider adapters behind server-side credentials.
-6. Add durable queue/store only after infrastructure bindings are configured and verified.
-7. Expand product discovery and research workflows without coupling them to any single provider.
-8. Keep the current evidence-backed eBay draft and export safeguards as the stable product surface throughout the migration.
+1. Stabilize shared capability, provider, route, job, and provenance types. — **done**
+2. Replace the placeholder capability response with a formal registry that exposes configured versus local routes truthfully. — **done**
+3. Introduce deterministic route selection and failure classification while retaining the current direct extractor. — **done**
+4. Add cache and deduplication interfaces with an explicit request-only fallback until durable bindings are available. — **done** (audited 2026-08-17: 16/16 local checks, mocked e2e, risk register in `docs/AIBAY_RELEASE_STATUS.md`)
+5. Add optional documented provider adapters behind server-side credentials. — **foundation done**: generic adapter contract `v1`, adapter registry, one real adapter (`local.evidence`) wired through the router via `POST /api/execute`, retry/fallback/attempt-trail semantics, UNCONFIGURED truthfulness for scaffolds (Apify). Remaining: promote additional adapters only when server-side credentials and documented capability checks exist.
+6. Add durable queue/store only after infrastructure bindings are configured and verified. — **not started** (binding-gated by design)
+7. Expand product discovery and research workflows without coupling them to any single provider. — **not started**
+8. Keep the current evidence-backed eBay draft and export safeguards as the stable product surface throughout the migration. — **maintained** (contract checks pass)

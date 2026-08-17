@@ -11,6 +11,18 @@ export type ExtractedEvidence = {
   confidence: number
 }
 
+/**
+ * Canonical cache key for a source URL: SSRF-validated and normalized with the
+ * source adapter (tracking parameters stripped) so equivalent URLs share one
+ * cache entry. Used by every cache namespace that keys on a source URL so no
+ * two layers derive different keys for the same source.
+ */
+export function extractionCacheKey(sourceUrl: string): string {
+  const parsed = assertSafePublicUrl(sourceUrl)
+  const { url } = normalizePublicSource(parsed)
+  return url.toString()
+}
+
 export type ExtractedVariant = {
   label: string
   attributes: Record<string, string>

@@ -72,13 +72,14 @@ export const onRequestPost = async ({ request, env }: RequestContext): Promise<R
     market: parseMarket(body.market),
   }
   const deterministicPackage = buildDeterministicListing(input)
-  const listingPackage = await rankListingTitlesWithAi(input, deterministicPackage, env)
+  const { listingPackage, aiRouting } = await rankListingTitlesWithAi(input, deterministicPackage, env)
   return json({
     status: 'review_ready',
     optimizationId: `opt_${crypto.randomUUID().replaceAll('-', '').slice(0, 16)}`,
     sourceSnapshotId: normalizeInputString(body.sourceSnapshotId, 120) || null,
     listingPackage,
-    aiProviderConfigured: Boolean(env.AI_PROVIDER_API_KEY && env.AI_PROVIDER_BASE_URL && env.AI_PROVIDER_MODEL),
+    aiRouting,
+    aiProviderConfigured: aiRouting.enabled && aiRouting.routes.some((route) => route.configured),
     note: 'This package is evidence-grounded and draft-only. Human review is required before export; no marketplace action has been performed.',
   }, { status: 201 }, context.requestId)
 }

@@ -18,7 +18,10 @@
 | `media.derivative` | Rights-gated request contract | Configured image provider/storage | Partial | Review-only derivative request; never auto-published |
 | `source.health` | Local route and allowlisted metadata checks | Provider adapters | Ready | Capability/provider state with timestamp |
 | `job.orchestration` | Bounded request state | Durable queue/store when bound | Transitional | Explicit job state; no fake durable queue |
-| `cache.result` | No durable cache binding | KV/R2/cache binding | Not configured | Freshness and invalidation metadata when enabled |
+| `cache.result` | Best-effort edge cache + explicit request-only fallback | Durable KV/R2 cache when bound | Active (request-scoped, not durable) | Freshness, hit/miss, mode, and backend metadata; cached values are never authoritative |
+| `dedup.identity_fingerprint` | Versioned local fingerprint deduplication | Any provider adapter (unchanged contract) | Ready | Kept records with `duplicateOf` links and conflict labels; nothing merged silently |
+| `adapter.contract_v1` | Generic provider adapter contract (`capabilities`, `canHandle`, `health`, `estimate`, `execute`, `normalize`, `classifyError`) | Any documented provider behind server-side credentials | Ready (contract); `local.evidence` adapter wired through router | Adapter metadata (id/version/config/health/limits/fallback) in capability responses; unconfigured providers report `not_configured` |
+| `route.execute` | Bounded router execution with attempt trail, retry, fallback | Durable queue/store when bound | Active (request-scoped) | `POST /api/execute`: observations with provenance, attempts, fallbackUsed, cache status |
 
 ## Selection policy
 

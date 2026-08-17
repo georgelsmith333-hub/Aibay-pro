@@ -2,7 +2,7 @@
 
 AiBay is an evidence-backed eBay-US product research and listing-draft workspace. It turns a user-supplied product URL into a reviewable product record, explicit variants, a timestamped market snapshot, policy-aware optimization suggestions, and rights-gated media derivatives.
 
-The repository contains a polished, mobile-responsive frontend with a clearly labelled demo mode plus a Cloudflare Pages Functions API foundation. Demo fixtures make the full review flow usable before production credentials are configured. Live eBay calls, durable data, AI generation, and image derivatives are intentionally server-side and opt-in.
+The repository contains a polished, mobile-responsive frontend with a clearly labelled demo mode plus a Cloudflare Pages Functions API foundation. Demo fixtures make the full review flow usable before production credentials are configured. Live eBay calls, durable data, AI generation, and image derivatives are intentionally server-side and opt-in. AI title ranking uses a free multi-route router: configure any OpenAI-compatible endpoint (Groq, Gemini free tier, OpenRouter `:free` models, Workers AI, local Ollama) as server-side `AI_ROUTES`, and AiBay fails over between routes automatically — the routing layer itself costs nothing.
 
 ## Product boundary
 
@@ -29,9 +29,11 @@ The output is written to `dist/` and is suitable for Cloudflare Pages.
 
 ## Cloudflare Pages deployment
 
-Create a Pages project connected to the GitHub repository, use `pnpm install` as the install command, `pnpm build` as the build command, and `dist` as the output directory. The repository includes `wrangler.toml` with public non-secret variables and commented binding examples. Configure secrets and bindings in Cloudflare project settings rather than committing them.
+Production deployment is automated: `.github/workflows/deploy-pages.yml` runs on push to `arena/01a00d12-aibay-pro` (or manual dispatch). It verifies the Cloudflare token, creates-or-finds the durable infrastructure (D1 `aibay-db`, KV `aibay-cache`, R2 `aibay-media`, Queue `aibay-jobs`) via `scripts/ensure-infra.mjs`, builds, deploys to the `aibay-pro` Pages project, applies `infra/schema.d1.sql`, sets runtime secrets, and runs a real Browser Run canary against example.com — the browser adapter only reports `ready` after that canary passes.
 
-The current API routes include `GET /api/health`, `POST /api/imports`, `GET /api/jobs/:id`, `POST /api/ebay/research`, `POST /api/media/enhance`, and `POST /api/exports/ebay-draft`. Pages Functions middleware applies baseline security headers, request correlation, same-origin CORS, and preflight handling.
+Required GitHub secret: `CLOUDFLARE_API_TOKEN` (account `d016ca182921e04d445bb9238703f336`). Optional secrets for live marketplace/AI features: `EBAY_CLIENT_ID`, `EBAY_CLIENT_SECRET`, `AI_ROUTES`. Local development runs without bindings: every feature falls back to request-only behavior and reports it truthfully.
+
+The current API routes include `GET /api/health`, `POST /api/imports`, `GET /api/jobs/:id`, `POST /api/ebay/research`, `POST /api/media/enhance`, `POST /api/exports/ebay-draft`, `POST /api/execute` (bounded route → adapter execution with provenance, attempt trail, and truthful cache/status reporting), and `POST /api/products/optimize` (deterministic draft engine with free multi-route AI title ranking and failover). `GET /api/providers` reports adapter inventory and configured AI routes (names/models/hosts only — never credentials). The frontend includes a Provider center that shows live routing state and a free-tier connect guide. Pages Functions middleware applies baseline security headers, request correlation, same-origin CORS, and preflight handling.
 
 ## Production credentials
 
@@ -70,7 +72,7 @@ curl -X POST https://YOUR_PAGES_DOMAIN/api/ebay/research \
 
 ## Repository map
 
-The UI lives in `src/`, domain types in `src/types/`, deterministic demo fixtures and formatting helpers in `src/lib/demo.ts`, and the responsive visual system in `src/App.css`. Cloudflare Pages Functions are under `functions/`. Source policy and adapter admission rules are in `docs/source-support-matrix.md`. `infra/` is reserved for deployment declarations and future database migrations. No provider secret belongs in GitHub, client code, browser storage, or demo fixtures.
+The UI lives in `src/`, domain types in `src/types/`, deterministic demo fixtures and formatting helpers in `src/lib/demo.ts`, and the responsive visual system in `src/App.css`. Cloudflare Pages Functions are under `functions/`; the orchestration interface layer (`functions/lib/orchestrator.ts`, `registry.ts`, `cache.ts`, `dedup.ts`) exposes route planning, provider health, and cache/deduplication contracts that are truthful about their request-only state until durable bindings are configured. Source policy and adapter admission rules are in `docs/source-support-matrix.md`. `infra/` is reserved for deployment declarations and future database migrations. No provider secret belongs in GitHub, client code, browser storage, or demo fixtures.
 
 ## Later APK
 

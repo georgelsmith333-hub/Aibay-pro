@@ -1,3 +1,5 @@
+import { createCacheStore } from '../lib/cache'
+import { FINGERPRINT_VERSION } from '../lib/dedup'
 import { classifyFailure, planRoute, validateSourceForTask, type TaskKind } from '../lib/orchestrator'
 
  type RequestContext = { request: Request; env: Record<string, unknown> }
@@ -12,7 +14,15 @@ export const onRequestPost = async ({ request, env }: RequestContext): Promise<R
   if (!task) return Response.json({ error: 'unsupported_task', allowedTasks: [...tasks] }, { status: 422 })
   try {
     validateSourceForTask(task, sourceUrl)
-    return Response.json({ status: 'planned', route: planRoute(env, task, sourceUrl), persistence: 'request_only', note: 'Planning is live. Durable execution requires a configured queue and job store.' }, { status: 200 })
+    const cache = createCacheStore(env, 'route').health
+    return Response.json({
+      status: 'planned',
+      route: planRoute(env, task, sourceUrl),
+      persistence: 'request_only',
+      cache: { mode: cache.mode, backend: cache.backend, durable: cache.durable, binding: cache.binding },
+      dedup: { mode: 'local_deterministic', fingerprintVersion: FINGERPRINT_VERSION },
+      note: 'Planning is live. Durable execution requires a configured queue and job store.',
+    }, { status: 200 })
   } catch (error) {
     const failure = classifyFailure(error)
     return Response.json({ status: 'rejected', error: failure.category, retryable: failure.retryable, message: failure.message }, { status: failure.category === 'unsafe_destination' ? 422 : 400 })

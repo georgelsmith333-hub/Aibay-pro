@@ -1,0 +1,6 @@
+# Normalize line endings for cross-platform scripts (Windows Git Bash / PowerShell)
+*.sh text eol=lf
+*.mjs text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.yml text eol=lf

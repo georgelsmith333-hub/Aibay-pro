@@ -1,3 +1,6 @@
+import { adapterRegistrySnapshot } from '../lib/adapters'
+import { createCacheStore } from '../lib/cache'
+import { FINGERPRINT_VERSION } from '../lib/dedup'
 import { buildRegistry, type RegistryStatus } from '../lib/registry'
 
 type ProviderCapability = {
@@ -51,6 +54,7 @@ export const onRequestGet = async ({ env }: PagesContext): Promise<Response> => 
   const registry = buildRegistry(env)
   const local = registry.providers.find((provider) => provider.id === 'local.evidence')
   const checkedAt = registry.checkedAt
+  const cache = createCacheStore(env, 'capabilities').health
   const publicProviders = await Promise.all(configuredSpaces(env).map(inspectPublicGradioSpace))
   return json({
     status: 'ok',
@@ -61,6 +65,7 @@ export const onRequestGet = async ({ env }: PagesContext): Promise<Response> => 
       ...publicProviders,
     ],
     registry,
-    policy: { automaticInference: false, externalRequests: 'metadata-only-unless-configured', rateLimitBehavior: 'respect-provider-response', maxConfiguredPublicSpaces: MAX_PUBLIC_SPACES, credentials: 'server-only' },
+    adapters: adapterRegistrySnapshot(env),
+    policy: { automaticInference: false, externalRequests: 'metadata-only-unless-configured', rateLimitBehavior: 'respect-provider-response', maxConfiguredPublicSpaces: MAX_PUBLIC_SPACES, credentials: 'server-only', cache: { mode: cache.mode, backend: cache.backend, durable: cache.durable, binding: cache.binding }, dedup: { mode: 'local_deterministic', fingerprintVersion: FINGERPRINT_VERSION } },
   })
 }
