@@ -164,3 +164,57 @@ export async function readTrendObservations(env: Env, keyword: string, sinceDays
     return rows.results.map((row) => ({ date: row.observed_date, count: row.count, source: row.source }))
   } catch { return [] }
 }
+
+
+// ---------------------------------------------------------------------------
+// Research jobs — D1-backed lifecycle with explicit request-only fallback
+// ---------------------------------------------------------------------------
+
+export type ResearchJobStatus = 'queued' | 'running' | 'complete' | 'blocked' | 'unavailable' | 'failed'
+
+export type ResearchJob = {
+  id: string
+  mission: string
+  status: ResearchJobStatus
+  requestId: string | null
+  createdAt: string
+  updatedAt: string
+  result: unknown | null
+  persistence: 'durable' | 'request_only'
+}
+
+function decodeJob(row: { id: string; mission: string | null; status: string; request_id: string | null; created_at: string; updated_at: string | null; result_json: string | null }, persistence: 'durable' | 'request_only'): ResearchJob {
+  let result: unknown | null = null
+  if (row.result_json) { try { result = JSON.parse(row.result_json) } catch { result = { error: 'stored_result_invalid' } } }
+  return { id: row.id, mission: row.mission || 'research', status: row.status as ResearchJobStatus, requestId: row.request_id, createdAt: row.created_at, updatedAt: row.updated_at || row.created_at, result, persistence }
+}
+
+export async function createJob(env: Env, input: { mission: string; requestId?: string | null; id?: string }): Promise<ResearchJob> {
+  const now = new Date().toISOString()
+  const id = input.id || `job_${crypto.randomUUID().replaceAll('-', '').slice(0, 20)}`
+  const db = d1(env)
+  if (!db) return { id, mission: input.mission.slice(0, 120), status: 'queued', requestId: input.requestId || null, createdAt: now, updatedAt: now, result: null, persistence: 'request_only' }
+  await db.prepare('INSERT INTO research_jobs (id, mission, status, request_id, created_at, updated_at, result_json) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .bind(id, input.mission.slice(0, 120), 'queued', input.requestId || null, now, now, null).run()
+  return { id, mission: input.mission.slice(0, 120), status: 'queued', requestId: input.requestId || null, createdAt: now, updatedAt: now, result: null, persistence: 'durable' }
+}
+
+export async function updateJob(env: Env, id: string, update: { status: ResearchJobStatus; result?: unknown }): Promise<{ ok: boolean; persistence: 'durable' | 'request_only'; error?: string }> {
+  const db = d1(env)
+  if (!db) return { ok: false, persistence: 'request_only', error: 'No D1 binding configured; this job cannot be polled durably.' }
+  const resultJson = update.result === undefined ? null : JSON.stringify(update.result).slice(0, 500_000)
+  try {
+    if (update.result === undefined) await db.prepare('UPDATE research_jobs SET status = ?, updated_at = ? WHERE id = ?').bind(update.status, new Date().toISOString(), id).run()
+    else await db.prepare('UPDATE research_jobs SET status = ?, updated_at = ?, result_json = ? WHERE id = ?').bind(update.status, new Date().toISOString(), resultJson, id).run()
+    return { ok: true, persistence: 'durable' }
+  } catch (error) { return { ok: false, persistence: 'durable', error: error instanceof Error ? error.message : 'Unknown D1 job update error' } }
+}
+
+export async function readJob(env: Env, id: string): Promise<ResearchJob | null> {
+  const db = d1(env)
+  if (!db) return null
+  try {
+    const row = await db.prepare('SELECT id, mission, status, request_id, created_at, updated_at, result_json FROM research_jobs WHERE id = ?').bind(id.slice(0, 80)).first<{ id: string; mission: string | null; status: string; request_id: string | null; created_at: string; updated_at: string | null; result_json: string | null }>()
+    return row ? decodeJob(row, 'durable') : null
+  } catch { return null }
+}
