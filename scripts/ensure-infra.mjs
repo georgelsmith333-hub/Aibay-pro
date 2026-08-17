@@ -14,7 +14,6 @@ if (!TOKEN || !ACCOUNT) {
   process.exit(1)
 }
 
-const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const WRANGLER_PATH = fileURLToPath(new URL('../wrangler.toml', import.meta.url))
 const INFRA_ENV_PATH = fileURLToPath(new URL('../.infra.env', import.meta.url))
 

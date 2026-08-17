@@ -30,3 +30,4 @@ dist-ssr
 .infra.env
 # GitHub Actions workflow is added by the operator (bot cannot push workflow files)
 .github/
+package-lock.json

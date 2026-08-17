@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # AiBay Pro — ONE-SHOT GO-LIVE (Windows Git Bash / macOS / Linux)
-# Run from anywhere: it clones-or-updates the repo, installs a Node-compatible
-# pnpm, runs the full deploy pipeline, waits for the site, and prints the URL.
+# Run from anywhere: it clones-or-updates the repo, installs dependencies with
+# npm (Node-20 compatible — no pnpm/corepack dependency), runs the full deploy
+# pipeline, waits for the site, and prints the URL.
 #
 # Requires:  CLOUDFLARE_API_TOKEN exported (see instructions)
 # Optional:  CLOUDFLARE_ACCOUNT_ID (defaults to the AiBay account)
@@ -23,19 +24,10 @@ echo " AiBay Pro go-live  ·  project: $PROJECT"
 echo "==============================================================="
 
 echo ""
-echo "==> 0/7 Node + pnpm"
+echo "==> 0/7 Node + npm"
 command -v node >/dev/null 2>&1 || { echo "ERROR: Node.js is required — install from https://nodejs.org (LTS) then re-run."; exit 1; }
-NODE_MAJOR=$(node -p "process.versions.node.split('.')[0]")
-echo "    node $(node -v) (major $NODE_MAJOR)"
-if [ "$NODE_MAJOR" -ge 22 ]; then
-  npm install -g pnpm >/dev/null 2>&1 || true
-else
-  echo "    Node < 22 -> installing pnpm 9 (Node-20 compatible)"
-  npm install -g pnpm@9 >/dev/null 2>&1 || true
-fi
-export PATH="$PATH:$(npm prefix -g)"
-command -v pnpm >/dev/null 2>&1 || { echo "ERROR: pnpm install failed. Run: npm install -g pnpm@9"; exit 1; }
-echo "    pnpm $(pnpm --version)"
+command -v npm >/dev/null 2>&1 || { echo "ERROR: npm is required — install Node.js from https://nodejs.org"; exit 1; }
+echo "    node $(node -v) · npm $(npm -v)"
 
 echo ""
 echo "==> 1/7 Repository"
@@ -65,7 +57,7 @@ echo "==> 2/7 Full deploy pipeline (token -> infra -> build -> deploy -> schema 
 ./scripts/deploy.sh
 
 echo ""
-echo "==> 6/7 Waiting for the site to go live"
+echo "==> 3/7 Waiting for the site to go live"
 URL="https://$PROJECT.pages.dev"
 CODE=""
 for i in 1 2 3 4 5 6 7 8; do
@@ -76,7 +68,7 @@ for i in 1 2 3 4 5 6 7 8; do
 done
 
 echo ""
-echo "==> 7/7 Final checks"
+echo "==> 4/7 Final checks"
 echo "    GET $URL/api/health  -> HTTP ${CODE:-failed}"
 if [ "$CODE" = "200" ]; then
   echo "    infra:"
@@ -89,6 +81,7 @@ echo "==============================================================="
 echo "  YOUR SITE IS LIVE:  $URL"
 echo "  Dashboard:          $URL/"
 echo "  Verify infra:       $URL/api/infra"
-echo "  Next: add APIFY_API_TOKEN (Pages secret) for live eBay data"
-echo "  without an eBay dev app."
+echo "  Live eBay data:     built-in reader is ACTIVE with zero keys."
+echo "  Optional richer:    EBAY_CLIENT_ID / EBAY_CLIENT_SECRET or"
+echo "                      APIFY_API_TOKEN as Pages secrets."
 echo "==============================================================="

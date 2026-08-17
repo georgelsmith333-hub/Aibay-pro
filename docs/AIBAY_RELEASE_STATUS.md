@@ -31,7 +31,9 @@ Step-4 (`6fcdcfc`) and the Step-5 foundation in this working tree are **not depl
 | `/api/capabilities`, `/api/route`, `/api/jobs`, `/api/jobs/:id` cache/dedup metadata | VERIFIED LOCAL (runtime responses include mode/backend/durable/binding + fingerprint version) |
 | Durable infrastructure wiring (D1, KV, R2, Queue) | VERIFIED LOCAL (6/6 wiring checks) + live fallback smoke (`/api/infra`, `/api/vault` truthful request_only). PRODUCTION state: PENDING operator deploy via `scripts/deploy.sh` (sandbox cannot reach api.cloudflare.com; bot cannot push workflow files or set Actions secrets) |
 | Cloudflare Workers AI auto-route | VERIFIED LOCAL (auto-route appears only with CLOUDFLARE_* secrets; keys never leak). PRODUCTION: activates once deploy.sh sets the Pages secrets |
-| Apify eBay actor (no-eBay-dev-app live market path) | VERIFIED MOCKED E2E (6/6: status truth table, run→poll→dataset→normalize with provenance, rate-limit classification, `/api/ebay/research` fallback contract, 412-when-nothing, demo branch intact). PRODUCTION: activates when APIFY_API_TOKEN + APIFY_EBay_CANARY are set |
+| Apify eBay actor (optional richer market route) | VERIFIED MOCKED E2E (6/6). PRODUCTION: activates when APIFY_API_TOKEN + APIFY_EBay_CANARY are set |
+| Built-in eBay search reader (ZERO keys) | VERIFIED MOCKED E2E (9/9: visible-page parse, price/currency/sold/condition, no-results, blocked→409 with alternatives, 429, redirect safety, tier-1 official still wins, three-tier endpoint). Live on deploy — no eBay dev app, no Apify token required |
+| Deploy pipeline (npm-based) | VERIFIED LOCAL (bash syntax, node --check); removes pnpm/corepack entirely so Node 20 machines deploy without the pnpm-11 `node:sqlite` crash |
 | Premium design layer (aurora background, glass surfaces, gradient glows, motion) | VERIFIED LOCAL (production build; no layout regressions in smoke) |
 
 ## Step 5 — provider-adapter foundation
