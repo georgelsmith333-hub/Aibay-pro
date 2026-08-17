@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """Direct-API Cloudflare Pages deploy — no wrangler, no Node version requirement.
 
-Uploads dist/ to Cloudflare Pages using the Pages Direct Upload API (the same
-API wrangler uses), creates the project if needed, and applies the D1 schema.
+Uploads dist/ to Cloudflare Pages using the Pages Direct Upload API:
+  1. ensure project
+  2. POST .../upload-token            -> JWT (with the API token)
+  3. POST .../upload-file  (per file) -> authorized with the JWT
+  4. POST .../deployments             -> manifest deploy (with the API token)
+  5. POST /d1/database/{id}/query     -> apply schema
 
 Requires env: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, plus a built dist/.
-Optional env: PROJECT_NAME (default aibay-pro-live)
-Works with Python 3 (preinstalled on Windows Git Bash via python3/python).
+Optional env: PROJECT_NAME (default aibay-pro-live), D1_ID.
 """
 import hashlib
 import json
@@ -20,6 +23,7 @@ from pathlib import Path
 TOKEN = os.environ.get("CLOUDFLARE_API_TOKEN", "")
 ACCOUNT = os.environ.get("CLOUDFLARE_ACCOUNT_ID", "")
 PROJECT = os.environ.get("PROJECT_NAME", "aibay-pro-live")
+D1_ID = os.environ.get("D1_ID", "")
 
 if not TOKEN or not ACCOUNT:
     print("ERROR: set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID")
@@ -32,76 +36,111 @@ if not (DIST / "index.html").exists():
     sys.exit(1)
 
 API = f"https://api.cloudflare.com/client/v4/accounts/{ACCOUNT}"
-HEADERS = {"Authorization": f"Bearer {TOKEN}"}
+AUTH = {"Authorization": f"Bearer {TOKEN}"}
 
 
-def api(path, method="GET", body=None, content_type="application/json"):
+def request(path, method="GET", body=None, content_type="application/json", headers=None, binary=None, timeout=120):
     url = f"{API}{path}"
-    data = None
-    headers = dict(HEADERS)
-    if body is not None:
-        data = body if isinstance(body, bytes) else json.dumps(body).encode()
-        headers["Content-Type"] = content_type
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    h = dict(AUTH)
+    if headers:
+        h.update(headers)
+    data = binary
+    if data is None and body is not None:
+        data = json.dumps(body).encode()
+    if content_type and data is not None:
+        h["Content-Type"] = content_type
+    req = urllib.request.Request(url, data=data, headers=h, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            return json.loads(resp.read().decode())
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read()
+            try:
+                return json.loads(raw.decode())
+            except Exception:
+                return {"_raw": raw.decode(errors="replace")}
     except urllib.error.HTTPError as e:
         text = e.read().decode(errors="replace")
-        print(f"    API {method} {path} -> HTTP {e.code}: {text[:300]}")
-        sys.exit(1)
+        print(f"    API {method} {path} -> HTTP {e.code}: {text[:400]}")
+        raise
 
 
-print(f"==> 1/5 Ensuring Pages project '{PROJECT}'")
-try:
-    api(f"/pages/projects/{PROJECT}")
-    print("    project exists")
-except SystemExit:
-    api(f"/pages/projects", "POST", {"name": PROJECT, "production_branch": "main"})
-    print(f"    created project {PROJECT}")
-
-print("==> 2/5 Uploading files (direct upload API)")
-files = sorted(p for p in DIST.rglob("*") if p.is_file())
-manifest = {}
-for f in files:
-    rel = f.relative_to(DIST).as_posix()
-    data = f.read_bytes()
-    manifest[rel] = {"hash": hashlib.sha256(data).hexdigest(), "size": len(data)}
-
-for f in files:
-    rel = f.relative_to(DIST).as_posix()
-    data = f.read_bytes()
-    h = manifest[rel]["hash"]
-    mime = mimetypes.guess_type(rel)[0] or "application/octet-stream"
-    req = urllib.request.Request(
-        f"{API}/pages/projects/{PROJECT}/upload-file",
-        data=data,
-        method="POST",
-        headers={
-            **HEADERS,
-            "Content-Type": mime,
-            "x-content-sha256": h,
-        },
-    )
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        json.loads(resp.read().decode())
-    print(f"    uploaded {rel}")
-
-print("==> 3/5 Creating deployment")
-deploy = api(f"/pages/projects/{PROJECT}/deployments", "POST", {"manifest": manifest})["result"]
-print(f"    deployment {deploy['id']} -> {deploy.get('url', '')}")
-
-print("==> 4/5 Applying D1 schema (if D1_ID is known)")
-d1_id = os.environ.get("D1_ID", "")
-schema = (ROOT / "infra" / "schema.d1.sql").read_text()
-if d1_id:
+def ensure_project():
+    print(f"==> 1/5 Ensuring Pages project '{PROJECT}'")
     try:
-        api(f"/d1/database/{d1_id}/query", "POST", {"sql": schema})
-        print("    D1 schema applied")
-    except SystemExit:
-        print("    (D1 query failed — check token permission: D1 edit)")
-else:
-    print("    (D1_ID not set; run scripts/ensure-infra.mjs or skip)")
+        request(f"/pages/projects/{PROJECT}")
+        print("    project exists")
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            raise
+        request(f"/pages/projects", "POST", {"name": PROJECT, "production_branch": "main"})
+        print(f"    created project {PROJECT}")
 
-print("==> 5/5 Done")
-print(f"    Your site: https://{PROJECT}.pages.dev")
+
+def get_upload_token():
+    print("==> 2/5 Getting upload token (JWT)")
+    result = request(f"/pages/projects/{PROJECT}/upload-token", "POST")
+    jwt = result.get("result", {}).get("jwt")
+    if not jwt:
+        print("    ERROR: upload-token response had no jwt:", json.dumps(result)[:300])
+        sys.exit(1)
+    print("    got upload token")
+    return jwt
+
+
+def upload_files(jwt):
+    print("==> 3/5 Uploading files (direct upload API, JWT-authorized)")
+    files = sorted(p for p in DIST.rglob("*") if p.is_file())
+    manifest = {}
+    for f in files:
+        rel = f.relative_to(DIST).as_posix()
+        data = f.read_bytes()
+        manifest[rel] = {"hash": hashlib.sha256(data).hexdigest(), "size": len(data)}
+
+    for f in files:
+        rel = f.relative_to(DIST).as_posix()
+        data = f.read_bytes()
+        mime = mimetypes.guess_type(rel)[0] or "application/octet-stream"
+        request(
+            f"/pages/projects/{PROJECT}/upload-file",
+            "POST",
+            binary=data,
+            content_type="application/octet-stream",
+            headers={
+                "Authorization": f"Bearer {jwt}",
+                "x-content-sha256": manifest[rel]["hash"],
+                "x-content-type": mime,
+            },
+        )
+        print(f"    uploaded {rel}")
+
+    return manifest
+
+
+def create_deployment(manifest):
+    print("==> 4/5 Creating deployment")
+    result = request(f"/pages/projects/{PROJECT}/deployments", "POST", {"manifest": manifest})
+    d = result.get("result", {})
+    print(f"    deployment {d.get('id')} -> {d.get('url', '')}")
+    return d
+
+
+def apply_schema():
+    print("==> 5/5 Applying D1 schema (if D1_ID is set)")
+    schema = (ROOT / "infra" / "schema.d1.sql").read_text()
+    if D1_ID:
+        try:
+            request(f"/d1/database/{D1_ID}/query", "POST", {"sql": schema})
+            print("    D1 schema applied")
+        except urllib.error.HTTPError as e:
+            print(f"    (D1 query failed HTTP {e.code} — check token has D1 edit permission)")
+    else:
+        print("    (D1_ID not set; run scripts/ensure-infra.mjs first to populate .infra.env)")
+
+
+if __name__ == "__main__":
+    ensure_project()
+    jwt = get_upload_token()
+    manifest = upload_files(jwt)
+    create_deployment(manifest)
+    apply_schema()
+    print("")
+    print(f"==> Done. Your site: https://{PROJECT}.pages.dev")
