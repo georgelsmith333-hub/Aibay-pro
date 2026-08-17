@@ -1,7 +1,8 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$Token,
-    [string]$AccountId = "d016ca182921e04d445bb9238703f336"
+    [string]$AccountId = "d016ca182921e04d445bb9238703f336",
+    [string]$ProjectName = "aibay-pro-live"
 )
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
@@ -24,7 +25,7 @@ pnpm lint
 pnpm build
 
 Write-Host "==> 4/7 Deploying to Cloudflare Pages (project: aibay-pro)"
-pnpm exec wrangler pages deploy dist --project-name aibay-pro --branch main --commit-dirty=true
+pnpm exec wrangler pages deploy dist --project-name $ProjectName --branch main --commit-dirty=true
 
 Write-Host "==> 5/7 Applying D1 schema"
 if (Test-Path .infra.env) {
@@ -39,14 +40,14 @@ if (Test-Path .infra.env) {
 }
 
 Write-Host "==> 6/7 Setting runtime secrets"
-$Token | pnpm exec wrangler pages secret put CLOUDFLARE_API_TOKEN --project-name aibay-pro
-$AccountId | pnpm exec wrangler pages secret put CLOUDFLARE_ACCOUNT_ID --project-name aibay-pro
+$Token | pnpm exec wrangler pages secret put CLOUDFLARE_API_TOKEN --project-name $ProjectName
+$AccountId | pnpm exec wrangler pages secret put CLOUDFLARE_ACCOUNT_ID --project-name $ProjectName
 
 Write-Host "==> 7/7 Browser Run canary"
 try {
     $canary = Invoke-WebRequest -Uri "https://api.cloudflare.com/client/v4/accounts/$AccountId/browser-rendering/content" -Headers $headers -Method Post -ContentType "application/json" -Body '{"url":"https://example.com/"}'
     if ($canary.StatusCode -eq 200 -and $canary.Content -match "example") {
-        "canary-verified-$(Get-Date -Format yyyy-MM-dd)" | pnpm exec wrangler pages secret put BROWSER_RUN_CANARY --project-name aibay-pro
+        "canary-verified-$(Get-Date -Format yyyy-MM-dd)" | pnpm exec wrangler pages secret put BROWSER_RUN_CANARY --project-name $ProjectName
         Write-Host "    Browser Run canary PASSED - adapter will report ready."
     } else {
         Write-Host "    Browser Run canary returned HTTP $($canary.StatusCode); adapter stays not_configured."
@@ -59,7 +60,7 @@ Write-Host "==> 8/8 Apify eBay actor canary (only when APIFY_API_TOKEN is set)"
 if ($env:APIFY_API_TOKEN) {
     try {
         $run = Invoke-RestMethod -Uri "https://api.apify.com/v2/acts/dtrungtin%2Febay-scraper/runs" -Headers @{ Authorization = "Bearer $env:APIFY_API_TOKEN" } -Method Post -ContentType "application/json" -Body '{"search":"test","country":"US","maxItems":1}'
-        "canary-apify-verified-$(Get-Date -Format yyyy-MM-dd)" | pnpm exec wrangler pages secret put APIFY_EBay_CANARY --project-name aibay-pro
+        "canary-apify-verified-$(Get-Date -Format yyyy-MM-dd)" | pnpm exec wrangler pages secret put APIFY_EBay_CANARY --project-name $ProjectName
         Write-Host "    Apify eBay canary started (run $($run.data.id)) - confirm success then re-deploy to mark verified."
     } catch {
         Write-Host "    Apify canary failed: $($_.Exception.Message)"
@@ -68,4 +69,4 @@ if ($env:APIFY_API_TOKEN) {
     Write-Host "    APIFY_API_TOKEN not set - skip."
 }
 
-Write-Host "==> Done. Verify: https://aibay-pro.pages.dev/api/infra"
+Write-Host "==> Done. Your site: https://$ProjectName.pages.dev  |  Verify: https://$ProjectName.pages.dev/api/infra"
