@@ -2,7 +2,8 @@
 
 **Author:** Manus AI  
 **Status date:** 2026-08-17  
-**Current release commit:** `61172c3`  
+**Current repository commit:** `c6a8c66`  
+**Deployed application commit:** `f24d7a7`  
 **Live production URL:** [https://aibay-pro-live.pages.dev](https://aibay-pro-live.pages.dev)
 
 ## Current deployment
@@ -14,7 +15,8 @@
 | Deployment target | New isolated Cloudflare account/project; the existing `aibay-pro` project was not modified by this live promotion |
 | Repository | [`georgelsmith333-hub/Aibay-pro`](https://github.com/georgelsmith333-hub/Aibay-pro) |
 | Deployed source branch | `arena/01a00d12-aibay-pro` |
-| Latest repository commit | `61172c3` — final production browser-validation record |
+| Latest repository commit | `c6a8c66` — corrected final production-status record |
+| Deployed application commit | `f24d7a7` — live health/binding correction and manifest deploy helper |
 | Frontend | React 19, TypeScript, Vite, responsive workspace UI |
 | Backend | Cloudflare Pages Functions / edge runtime |
 | Runtime environment | `production` |
