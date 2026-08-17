@@ -13,7 +13,12 @@ if [ ! -f scripts/ensure-infra.mjs ]; then
   exit 1
 fi
 
-command -v pnpm >/dev/null 2>&1 || { echo "ERROR: pnpm not found. Install it with: npm install -g pnpm"; exit 1; }
+if ! command -v pnpm >/dev/null 2>&1; then
+  echo "    pnpm not found — installing via npm..."
+  npm install -g pnpm
+  export PATH="$PATH:$(npm prefix -g)"
+fi
+command -v pnpm >/dev/null 2>&1 || { echo "ERROR: pnpm still not found after install. Run: npm install -g pnpm  then re-run this script."; exit 1; }
 
 echo "==> 1/7 Verifying Cloudflare token"
 curl -fsS "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/tokens/verify" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" | head -c 200
@@ -29,7 +34,7 @@ pnpm check:functions
 pnpm lint
 pnpm build
 
-echo "==> 4/7 Deploying to Cloudflare Pages (project: aibay-pro)"
+echo "==> 4/7 Deploying to Cloudflare Pages (project: $PROJECT_NAME)"
 pnpm exec wrangler pages deploy dist --project-name "$PROJECT_NAME" --branch main --commit-dirty=true
 
 echo "==> 5/7 Applying D1 schema"
