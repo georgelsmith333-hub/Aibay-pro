@@ -1,6 +1,6 @@
 import { assertSafePublicUrl } from './security'
 
-import { adapterFor, normalizePublicSource, redirectDiagnostic, sessionRedirectDiagnostic, unsupportedDiagnostic, type SourceDiagnostic } from './source-adapters'
+import { adapterFor, normalizePublicSource, redirectDiagnostic, sessionRedirectDiagnostic, unsupportedDiagnostic, type SourceDiagnostic, type SourceKind } from './source-adapters'
 
 export type ExtractedEvidence = {
   label: string
@@ -33,6 +33,7 @@ export type ProductExtraction = {
   sourceUrl: string
   canonicalUrl: string
   sourceHost: string
+  sourceKind: SourceKind
   title: string
   description: string
   price: { value: number | null; currency: string | null }
@@ -60,8 +61,9 @@ function absoluteUrl(value: string | undefined, base: URL) {
 }
 
 function emptyExtraction(sourceUrl: URL, canonicalUrl: string, diagnostic: SourceDiagnostic): ProductExtraction {
+  const { kind } = normalizePublicSource(sourceUrl)
   return {
-    sourceUrl: sourceUrl.toString(), canonicalUrl, sourceHost: sourceUrl.hostname.replace(/^www\\./, ''), title: '', description: '',
+    sourceUrl: sourceUrl.toString(), canonicalUrl, sourceHost: sourceUrl.hostname.replace(/^www\\./, ''), sourceKind: kind, title: '', description: '',
     price: { value: null, currency: null }, media: [], fields: [], variants: [], sourceHealth: 'blocked',
     warnings: [diagnostic.reason], sourceDiagnostic: diagnostic, retrievedAt: new Date().toISOString(),
   }
@@ -69,10 +71,10 @@ function emptyExtraction(sourceUrl: URL, canonicalUrl: string, diagnostic: Sourc
 
 export function incompleteExtractionFromError(sourceUrl: string, errorMessage: string): ProductExtraction {
   const sourceRoot = assertSafePublicUrl(sourceUrl)
-  const { adapter, url: attemptedUrl } = normalizePublicSource(sourceRoot)
+  const { adapter, url: attemptedUrl, kind } = normalizePublicSource(sourceRoot)
   const reason = `The exact public source returned no usable product record: ${errorMessage}`
   return {
-    sourceUrl: sourceRoot.toString(), canonicalUrl: attemptedUrl.toString(), sourceHost: sourceRoot.hostname.replace(/^www\\./, ''), title: '', description: '',
+    sourceUrl: sourceRoot.toString(), canonicalUrl: attemptedUrl.toString(), sourceHost: sourceRoot.hostname.replace(/^www\\./, ''), sourceKind: kind, title: '', description: '',
     price: { value: null, currency: null }, media: [], fields: [], variants: [], sourceHealth: 'incomplete',
     warnings: [reason], sourceDiagnostic: { status: 'incomplete', reason, sourceHost: sourceRoot.hostname.replace(/^www\\./, ''), adapter: adapter.id, attemptedUrl: attemptedUrl.toString(), redirectCount: 0, redirectHosts: [sourceRoot.hostname.replace(/^www\\./, '')] }, retrievedAt: new Date().toISOString(),
   }
@@ -207,7 +209,7 @@ export async function extractPublicProduct(sourceUrl: string, redirectCount = 0,
   const health = sourceLooksBlocked(html, response.status) ? 'blocked' : response.ok ? 'healthy' : 'incomplete'
   if (health === 'blocked') {
     return {
-      sourceUrl: sourceRoot.toString(), canonicalUrl, sourceHost: sourceRoot.hostname.replace(/^www\./, ''), title: '', description: '', price: { value: null, currency: null }, media: [], fields: [], variants: [], sourceHealth: 'blocked', warnings: ['The source requires a permitted fallback. AiBay does not bypass CAPTCHA, login, or access controls.'], sourceDiagnostic: { status: 'access_controlled', reason: 'The public source signalled access controls or anti-bot verification. AiBay does not bypass these controls.', sourceHost: sourceRoot.hostname.replace(/^www\./, ''), adapter: adapter.id, attemptedUrl: fetchUrl.toString(), redirectCount, redirectHosts: redirectTrail }, retrievedAt: new Date().toISOString(),
+      sourceUrl: sourceRoot.toString(), canonicalUrl, sourceHost: sourceRoot.hostname.replace(/^www\./, ''), sourceKind: kind, title: '', description: '', price: { value: null, currency: null }, media: [], fields: [], variants: [], sourceHealth: 'blocked', warnings: ['The source requires a permitted fallback. AiBay does not bypass CAPTCHA, login, or access controls.'], sourceDiagnostic: { status: 'access_controlled', reason: 'The public source signalled access controls or anti-bot verification. AiBay does not bypass these controls.', sourceHost: sourceRoot.hostname.replace(/^www\./, ''), adapter: adapter.id, attemptedUrl: fetchUrl.toString(), redirectCount, redirectHosts: redirectTrail }, retrievedAt: new Date().toISOString(),
     }
   }
   if (!response.ok) throw new Error(`The source returned HTTP ${response.status}.`)
@@ -240,7 +242,7 @@ export async function extractPublicProduct(sourceUrl: string, redirectCount = 0,
     ...(variants.length ? [] : ['No supported selectable variants were detected from public selects.']),
   ]
   return {
-    sourceUrl: sourceRoot.toString(), canonicalUrl, sourceHost: sourceRoot.hostname.replace(/^www\./, ''), title, description,
+    sourceUrl: sourceRoot.toString(), canonicalUrl, sourceHost: sourceRoot.hostname.replace(/^www\./, ''), sourceKind: kind, title, description,
     price: { value: Number.isFinite(priceValue) && priceValue ? priceValue : null, currency: currency || null },
     media: rawImage ? [{ url: rawImage, alt: `${title || 'Product'} source image`, sourcePath: product.image ? 'JSON-LD Product.image' : 'Open Graph og:image' }] : [],
     fields, variants, sourceHealth: warnings.length > 0 ? 'incomplete' : 'healthy', warnings,
