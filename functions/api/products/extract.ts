@@ -35,7 +35,8 @@ export const onRequestPost = async ({ request, env }: RequestContext): Promise<R
       return json({
         status: 'blocked',
         extraction,
-        alternatives: ['Use a public manufacturer source.', 'Upload a document or image you are entitled to use.', 'Enter fields manually with provenance.', 'Connect an approved source API.'],
+        marketResearch: extraction.sourceKind === 'listing' ? { available: true, endpoint: '/api/jobs/research', queryHint: extraction.sourceUrl, note: 'This is an active-listing URL. Continue with market observations; no sold-history claim is made.' } : undefined,
+        alternatives: extraction.sourceKind === 'listing' ? ['Run eBay market research for this listing or its identifier.', 'Open the exact listing and continue with user-provided evidence.', 'Upload a document or image you are entitled to use.', 'Connect an approved source API.'] : ['Use a public manufacturer source.', 'Upload a document or image you are entitled to use.', 'Enter fields manually with provenance.', 'Connect an approved source API.'],
       }, { status: 409 }, context.requestId)
     }
     const payload = { status: extraction.sourceHealth, extraction, aiRepairUsed: false, note: 'Only public structured/visible metadata was parsed. No unsupported claims were inferred.', cache: cacheMeta(cache.health, false) }

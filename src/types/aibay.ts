@@ -110,6 +110,7 @@ export interface ImportFailure {
   reason: string
   alternatives: string[]
   sourceUrl: string
+  sourceKind?: 'product' | 'listing' | 'search' | 'document' | 'image' | 'article' | 'unknown'
   diagnostic?: SourceDiagnostic
 }
 

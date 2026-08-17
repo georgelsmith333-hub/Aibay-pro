@@ -313,9 +313,11 @@ function ManualEvidenceForm({ sourceUrl, onCreate, onCancel }: { sourceUrl: stri
 }
 function BlockedSource({ failure, events, state, onReset, onContinue }: { failure: ImportFailure; events: JobEvent[]; state: JobState; onReset: () => void; onContinue: (input: { sourceUrl: string; title: string; brand: string; model: string; price: string; currency: string; description: string }) => void }) {
   const diagnostic = failure.diagnostic
+  const listingId = failure.sourceUrl.match(/\/itm\/(?:[^/]+\/)?(\d+)/i)?.[1] || ''
+  const marketUrl = listingId ? `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(listingId)}` : `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(failure.sourceUrl)}`
   const label = diagnostic?.status === 'session_required' ? 'SAFE RESEARCH HANDOFF' : diagnostic?.status === 'access_controlled' ? 'ACCESS-CONTROLLED SOURCE' : failure.blocked ? 'SAFE ACQUISITION STOP' : 'EVIDENCE HANDOFF'
   const title = diagnostic?.status === 'session_required' ? 'The exact source is protected — research can continue.' : failure.blocked ? 'The exact source stopped safely — research can continue.' : 'This exact source needs more evidence.'
-  return <div className="blocked-source-wrap"><Card className="blocked-source-card"><div className="blocked-icon"><ShieldCheck size={28} /></div><p className="eyebrow">{label}</p><h1>{title}</h1><p>{failure.reason}</p><p className="blocked-source-subtitle">Nothing was replaced: no unrelated product, image set, fixture, or unverified market number was inserted.</p>{diagnostic && <div className="source-diagnostic"><div><span>Source route</span><strong>{diagnostic.adapter}</strong></div><div><span>Redirects inspected</span><strong>{diagnostic.redirectCount}</strong></div><div><span>Path</span><strong>{diagnostic.redirectHosts.join(' → ') || diagnostic.sourceHost}</strong></div></div>}<div className="fallback-list">{failure.alternatives.map((alternative) => <div key={alternative}><CheckCircle2 size={16} />{alternative}</div>)}</div><div className="blocked-source-actions"><a className="secondary-button" href={failure.sourceUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Open exact source</a><button className="secondary-button" onClick={onReset}><ChevronRight size={16} /> Use another source</button></div></Card><ManualEvidenceForm sourceUrl={failure.sourceUrl} onCreate={onContinue} onCancel={onReset} /><JobTimeline events={events} state={state} /></div>
+  return <div className="blocked-source-wrap"><Card className="blocked-source-card"><div className="blocked-icon"><ShieldCheck size={28} /></div><p className="eyebrow">{label}</p><h1>{title}</h1><p>{failure.reason}</p><p className="blocked-source-subtitle">Nothing was replaced: no unrelated product, image set, fixture, or unverified market number was inserted.</p>{diagnostic && <div className="source-diagnostic"><div><span>Source route</span><strong>{diagnostic.adapter}</strong></div><div><span>Redirects inspected</span><strong>{diagnostic.redirectCount}</strong></div><div><span>Path</span><strong>{diagnostic.redirectHosts.join(' → ') || diagnostic.sourceHost}</strong></div></div>}<div className="fallback-list">{failure.alternatives.map((alternative) => <div key={alternative}><CheckCircle2 size={16} />{alternative}</div>)}</div><div className="blocked-source-actions"><a className="secondary-button" href={failure.sourceUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} /> Open exact source</a>{failure.sourceKind === 'listing' && <a className="primary-button" href={marketUrl} target="_blank" rel="noreferrer"><BarChart3 size={15} /> Open eBay market search</a>}<button className="secondary-button" onClick={onReset}><ChevronRight size={16} /> Use another source</button></div></Card><ManualEvidenceForm sourceUrl={failure.sourceUrl} onCreate={onContinue} onCancel={onReset} /><JobTimeline events={events} state={state} /></div>
 }
 
 function ProductOverview({ workspace, selectedVariant, setSelectedVariant, onOptimize, onOpenMedia, optimizing, optimization }: { workspace: ProductWorkspace; selectedVariant: string; setSelectedVariant: (id: string) => void; onOptimize: () => void; onOpenMedia: () => void; optimizing: boolean; optimization: OptimizationRun | null }) {
@@ -400,10 +402,10 @@ function App() {
   const progressEvents = (sourceEvents: JobEvent[], doneState: JobState, onDone: () => void) => { setEvents(sourceEvents.map((event) => ({ ...event, state: 'pending' }))); let current = 0; const tick = () => { setEvents((previous) => previous.map((event, index) => index < current ? { ...event, state: 'complete' } : index === current ? { ...event, state: 'active' } : event)); if (current >= sourceEvents.length) { setJobState(doneState); onDone(); return }; current += 1; window.setTimeout(tick, 640) }; tick() }
   const startImportProgress = (sourceEvents: JobEvent[], activeId: string) => setEvents(sourceEvents.map((event) => ({ ...event, state: event.id === activeId ? 'active' : 'pending' })))
   const updateImportEvent = (id: string, state: JobEvent['state'], detail?: string) => setEvents((previous) => previous.map((event) => event.id === id ? { ...event, state, ...(detail ? { detail } : {}) } : event))
-  const stopImport = (blocked: boolean, reason: string, alternatives: string[], diagnostic?: SourceDiagnostic) => {
+  const stopImport = (blocked: boolean, reason: string, alternatives: string[], diagnostic?: SourceDiagnostic, sourceKind?: ImportFailure['sourceKind']) => {
     setWorkspace(null)
     setJobState(blocked ? 'blocked' : 'unavailable')
-    setFailure({ blocked, reason, alternatives, sourceUrl: url.trim(), diagnostic })
+    setFailure({ blocked, reason, alternatives, sourceUrl: url.trim(), diagnostic, sourceKind })
   }
   const continueWithEvidence = (input: { sourceUrl: string; title: string; brand: string; model: string; price: string; currency: string; description: string }) => {
     const manualWorkspace = workspaceFromManualEvidence(input)
@@ -450,10 +452,11 @@ function App() {
       .then(({ response, payload }) => {
         window.clearTimeout(timeout)
         if (response.status === 409) {
-          const blockedExtraction = payload.extraction as { warnings?: string[]; sourceDiagnostic?: SourceDiagnostic } | undefined
+          const blockedExtraction = payload.extraction as { warnings?: string[]; sourceDiagnostic?: SourceDiagnostic; sourceKind?: ImportFailure['sourceKind'] } | undefined
           const diagnostic = blockedExtraction?.sourceDiagnostic
           updateImportEvent('extract', 'blocked', diagnostic?.status === 'session_required' ? 'The source redirected to a cookie-synchronization route. AiBay stopped without replaying session cookies.' : 'The source did not permit public metadata retrieval without an access-control bypass.')
-          stopImport(true, diagnostic?.reason || blockedExtraction?.warnings?.[0] || 'The source requires a permitted fallback.', payload.alternatives || ['Use a public manufacturer page.', 'Upload source evidence.', 'Enter fields manually.'], diagnostic)
+          stopImport(true, diagnostic?.reason || blockedExtraction?.warnings?.[0] || 'The source requires a permitted fallback.', payload.alternatives || ['Use a public manufacturer page.', 'Upload source evidence.', 'Enter fields manually.'], diagnostic, blockedExtraction?.sourceKind)
+          if (blockedExtraction?.sourceKind === 'listing') notify('eBay listing URL identified. Continue with active-market research; sold history is not assumed.')
           return
         }
         if (response.ok && payload.extraction && typeof payload.extraction === 'object') {
