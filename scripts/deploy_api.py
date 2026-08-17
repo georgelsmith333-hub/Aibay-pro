@@ -136,11 +136,46 @@ def apply_schema():
         print("    (D1_ID not set; run scripts/ensure-infra.mjs first to populate .infra.env)")
 
 
+
+def ensure_infra():
+    """Create-or-find D1 and KV so bindings always exist, and write .infra.env."""
+    import subprocess
+    print("==> 0/5 Ensuring D1 + KV (idempotent)")
+    env = dict(os.environ)
+    env["CLOUDFLARE_API_TOKEN"] = TOKEN
+    env["CLOUDFLARE_ACCOUNT_ID"] = ACCOUNT
+    # Reuse ensure-infra.mjs (Node is fine for this part; it's just API calls)
+    try:
+        subprocess.run(["node", str(ROOT / "scripts" / "ensure-infra.mjs")], check=True, env=env)
+    except Exception as e:
+        print(f"    ensure-infra.mjs failed ({e}); continuing with whatever exists")
+    # Load .infra.env
+    env_path = ROOT / ".infra.env"
+    if env_path.exists():
+        for line in env_path.read_text().splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                os.environ[k] = v
+    global D1_ID
+    D1_ID = os.environ.get("D1_ID", "")
+    print(f"    D1_ID={D1_ID[:8] or '(none)'}...")
+
 if __name__ == "__main__":
+    ensure_infra()
     ensure_project()
     jwt = get_upload_token()
     manifest = upload_files(jwt)
     create_deployment(manifest)
     apply_schema()
+    # Verify: fetch the latest deployment status
+    try:
+        result = request(f"/pages/projects/{PROJECT}/deployments", "GET")
+        deploys = result.get("result", [])
+        latest = deploys[0] if deploys else {}
+        print(f"    latest deployment: {latest.get('id')} status={latest.get('status')} environment={latest.get('environment')}")
+        if latest.get("status") != "success":
+            print("    WARNING: latest deployment is not 'success' — check the upload output above.")
+    except Exception:
+        print("    (could not verify deployment status)")
     print("")
     print(f"==> Done. Your site: https://{PROJECT}.pages.dev")
