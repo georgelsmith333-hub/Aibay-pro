@@ -141,7 +141,8 @@ export type PublicExtraction = {
   title: string
   description: string
   price: { value: number | null; currency: string | null }
-  media: Array<{ url: string; alt: string; sourcePath: string }>
+  sourceKind?: 'product' | 'listing' | 'search' | 'document' | 'image' | 'article' | 'unknown'
+  media: Array<{ url: string; previewUrl?: string; alt: string; sourcePath: string }>
   fields: Array<{ label: string; value: string; state: 'verified' | 'derived' | 'needs_review' | 'unknown'; method: string; sourcePath: string; confidence: number }>
   variants: Array<{ label: string; attributes: Record<string, string>; sourcePath: string }>
   sourceHealth: 'healthy' | 'blocked' | 'incomplete'
@@ -175,7 +176,7 @@ export function workspaceFromExtraction(extraction: PublicExtraction): ProductWo
     ? extraction.variants.map((variant, index) => ({ id: `live-v${index + 1}`, label: variant.label, sku: `SOURCE-${index + 1}`, price: sourcePrice, stock: 0, active: true, attributes: variant.attributes }))
     : [{ id: 'live-default', label: 'Source product / confirmation required', sku: 'SOURCE-DEFAULT', price: sourcePrice, stock: 0, active: true, attributes: {} }]
   const media = extraction.media.length
-    ? extraction.media.map((item, index) => ({ id: `live-m${index + 1}`, url: item.url, alt: item.alt, width: 0, height: 0, source: item.sourcePath }))
+    ? extraction.media.map((item, index) => ({ id: `live-m${index + 1}`, url: item.url, previewUrl: item.previewUrl, alt: item.alt, width: 0, height: 0, source: item.sourcePath, derivativeStatus: 'not_requested' as const }))
     : []
   const verified = evidence.filter((field) => field.state === 'verified' || field.state === 'derived').length
   const reviewPenalty = evidence.filter((field) => field.state === 'needs_review' || field.state === 'unknown').length * 7

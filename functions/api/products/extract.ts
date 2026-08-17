@@ -5,7 +5,7 @@ import { assertSafePublicUrl, getContext, json, normalizeInputString } from '../
 type Env = Record<string, string | undefined>
 type RequestContext = { request: Request; env: Env }
 
-const CACHE_NAMESPACE = 'public-extraction-v3'
+const CACHE_NAMESPACE = 'public-extraction-v4'
 const CACHE_TTL_SECONDS = 300
 
 function cacheMeta(health: CacheHealth, hit: boolean) {
@@ -13,6 +13,10 @@ function cacheMeta(health: CacheHealth, hit: boolean) {
 }
 
 type ExtractBody = { sourceUrl?: unknown; consent?: unknown }
+
+function withPreviewUrls(extraction: Awaited<ReturnType<typeof extractPublicProduct>>) {
+  return { ...extraction, media: extraction.media.map((item) => ({ ...item, previewUrl: `/api/media/preview?url=${encodeURIComponent(item.url)}` })) }
+}
 
 export const onRequestPost = async ({ request, env }: RequestContext): Promise<Response> => {
   const context = getContext(request, env)
@@ -30,7 +34,7 @@ export const onRequestPost = async ({ request, env }: RequestContext): Promise<R
     if (cached.hit && cached.value) {
       return json({ ...cached.value, cache: cacheMeta(cache.health, true) }, {}, context.requestId)
     }
-    const extraction = await extractPublicProduct(parsedSource)
+    const extraction = withPreviewUrls(await extractPublicProduct(parsedSource))
     if (extraction.sourceHealth === 'blocked') {
       return json({
         status: 'blocked',

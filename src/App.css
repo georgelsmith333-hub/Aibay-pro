@@ -721,3 +721,22 @@ p { color: var(--ink-soft); font-size: 13px; line-height: 1.65; }
 .market-provenance svg { flex: 0 0 auto; margin-top: 1px; color: var(--green); }
 .market-image-fallback { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 8px; background: linear-gradient(135deg, #edf4f1, #f6ede1); color: #6e867b; }
 @media (max-width: 560px) { .market-provenance { font-size: 8px; } .market-image-fallback { width: 34px; height: 34px; } }
+
+.optimization-session-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.3fr) minmax(220px, .7fr); gap: 16px; margin-top: 16px; }
+.keyword-chip-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.keyword-chip { display: inline-flex; flex-direction: column; gap: 3px; border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px; background: #f8fbf9; }
+.keyword-chip strong { font-size: 13px; }
+.keyword-chip small { color: var(--ink-soft); font-size: 10px; line-height: 1.25; }
+.media-plan-list { display: grid; gap: 8px; }
+.media-plan-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 9px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.media-plan-row:last-child { border-bottom: 0; }
+.media-plan-row > span { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 9px; color: var(--green); background: var(--green-wash); }
+.media-plan-row strong { display: block; font-size: 12px; }
+.media-plan-row p { margin: 2px 0 0; color: var(--ink-soft); font-size: 11px; line-height: 1.35; }
+.session-summary { color: var(--ink-soft); font-size: 12px; line-height: 1.5; margin: -2px 0 10px; }
+.description-depth-stat { display: flex; align-items: baseline; gap: 7px; padding: 12px 0; }
+.description-depth-stat strong { color: var(--ink); font-size: 32px; letter-spacing: -.04em; }
+.description-depth-stat span { color: var(--ink-soft); font-size: 13px; }
+.description-depth-stat small { margin-left: auto; color: var(--ink-soft); font-size: 11px; }
+@media (max-width: 1100px) { .optimization-session-grid { grid-template-columns: 1fr 1fr; } .description-depth-card { grid-column: 1 / -1; } }
+@media (max-width: 720px) { .optimization-session-grid { grid-template-columns: 1fr; } .description-depth-card { grid-column: auto; } .media-plan-row { grid-template-columns: 28px minmax(0, 1fr); } .media-plan-row .status-pill { grid-column: 2; justify-self: start; } }

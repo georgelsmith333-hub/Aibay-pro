@@ -27,7 +27,7 @@ export function classifySourceKind(url: URL): SourceKind {
   if (imageExtension.test(url.pathname)) return 'image'
   if (/[?&](q|query|search)=/i.test(url.search) || /\/search(?:\/|$)|\/s(?:\/|$)/i.test(url.pathname)) return 'search'
   if (/\/itm(?:\/|$)|\/category\/|\/collections?\/|\/shop\/|\/browse\//i.test(url.pathname)) return 'listing'
-  if (/\/item\/|\/product\/|\/dp\/|\/p\//i.test(url.pathname)) return 'product'
+  if (/\/item\/|\/products?(?:\/|$)|\/dp\/|\/gp\/product\/|\/p\//i.test(url.pathname)) return 'product'
   if (/\/blog\/|\/article\/|\/news\//i.test(url.pathname)) return 'article'
   return 'unknown'
 }

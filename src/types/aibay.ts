@@ -23,10 +23,13 @@ export interface ProductVariant {
 export interface ProductMedia {
   id: string
   url: string
+  previewUrl?: string
   alt: string
   width: number
   height: number
   source: string
+  derivativeUrl?: string
+  derivativeStatus?: 'not_requested' | 'queued' | 'created' | 'not_created' | 'review_required'
   enhanced?: boolean
   rightsConfirmed?: boolean
 }
@@ -90,7 +93,11 @@ export interface OptimizationRun {
   priceBand: { low: number; target: number; high: number; currency: string }
   strategy: string[]
   policyChecks: Array<{ label: string; passed: boolean; note: string }>
-  mediaPlan: Array<{ mediaId: string; action: string; reason: string }>
+  mediaPlan: Array<{ mediaId: string; action: string; reason: string; status?: string }>
+  keywordOpportunities?: Array<{ term: string; source: string; confidence: number }>
+  bannerRecommendation?: { mediaId: string | null; status: string; reason: string }
+  descriptionWordCount?: number
+  descriptionTargetWords?: number
 }
 
 export type SourceDiagnosticStatus = 'public_evidence' | 'session_required' | 'access_controlled' | 'redirect_loop' | 'redirect_limit' | 'incomplete' | 'unsupported'

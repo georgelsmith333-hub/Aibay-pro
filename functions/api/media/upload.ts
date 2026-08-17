@@ -27,11 +27,13 @@ export const onRequestPost = async ({ request, env }: RequestContext): Promise<R
   if (file.size <= 0 || file.size > MAX_BYTES) return json({ error: 'image_too_large', message: `Images must be between 1 byte and ${MAX_BYTES} bytes.` }, { status: 413 }, context.requestId)
 
   const sourceUrl = normalizeInputString(form.get('sourceUrl'), 2000)
-  const key = `sources/${crypto.randomUUID().replaceAll('-', '')}-${safeFileName(file.name)}`
+  const requestedKind = normalizeInputString(form.get('kind'), 40)
+  const kind = requestedKind === 'derivative' ? 'derivatives' : 'sources'
+  const key = `${kind}/${crypto.randomUUID().replaceAll('-', '')}-${safeFileName(file.name)}`
   const bucket = env.MEDIA_BUCKET as R2Bucket
   await bucket.put(key, file.stream(), {
     httpMetadata: { contentType: file.type },
-    customMetadata: { rightsConfirmed: 'true', sourceUrl: sourceUrl || '', originalName: file.name.slice(0, 180), byteLength: String(file.size), uploadedAt: new Date().toISOString() },
+    customMetadata: { rightsConfirmed: 'true', mediaKind: kind, sourceUrl: sourceUrl || '', originalName: file.name.slice(0, 180), byteLength: String(file.size), uploadedAt: new Date().toISOString() },
   })
-  return json({ status: 'stored', storage: 'r2', objectKey: key, sourceUrl: sourceUrl || null, objectUrl: `/api/media/object?key=${encodeURIComponent(key)}`, bytes: file.size, contentType: file.type, reviewRequired: true }, { status: 201 }, context.requestId)
+  return json({ status: 'stored', storage: 'r2', mediaKind: kind === 'derivatives' ? 'derivative' : 'source', objectKey: key, sourceUrl: sourceUrl || null, objectUrl: `/api/media/object?key=${encodeURIComponent(key)}`, bytes: file.size, contentType: file.type, reviewRequired: true }, { status: 201 }, context.requestId)
 }

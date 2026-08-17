@@ -11,6 +11,21 @@ export type MarketObservation = {
   shipping?: number
   condition?: string
   matched?: 'direct' | 'comparable'
+  seller?: string
+  url?: string
+  image?: string
+  capturedAt?: string
+  dataScope?: 'active_listing_observation' | 'sold_observation'
+}
+
+export type ListingMediaInput = {
+  id: string
+  alt?: string
+  source?: string
+  width?: number
+  height?: number
+  enhanced?: boolean
+  derivativeStatus?: string
 }
 
 export type ListingInput = {
@@ -23,6 +38,8 @@ export type ListingInput = {
   selectedVariant?: { label: string; sku?: string; attributes?: Record<string, string> }
   evidence: ListingEvidence[]
   market: MarketObservation[]
+  media?: ListingMediaInput[]
+  descriptionTargetWords?: number
 }
 
 export type ListingPackage = {
@@ -33,6 +50,11 @@ export type ListingPackage = {
   priceBand: { low: number | null; target: number | null; high: number | null; currency: string }
   strategy: string[]
   validation: Array<{ label: string; passed: boolean; note: string }>
+  keywordOpportunities: Array<{ term: string; source: string; confidence: number }>
+  imagePlan: Array<{ mediaId: string; role: string; reason: string; status: string }>
+  bannerRecommendation: { mediaId: string | null; status: 'recommended' | 'needs_source' | 'review_only'; reason: string }
+  descriptionWordCount: number
+  descriptionTargetWords: number
   reviewRequired: true
   automaticPublishing: false
 }
@@ -66,7 +88,7 @@ function capTitle(value: string) {
   const accepted: string[] = []
   for (const word of words) {
     const next = [...accepted, word].join(' ')
-    if (next.length > 80) break
+    if (next.length > 70) break
     accepted.push(word)
   }
   return accepted.join(' ')
@@ -74,6 +96,20 @@ function capTitle(value: string) {
 
 function factualEvidence(input: ListingInput) {
   return input.evidence.filter((field) => field.state === 'verified' || field.state === 'derived').filter((field) => field.value && !/^unknown$/i.test(field.value))
+}
+
+function keywordOpportunities(input: ListingInput) {
+  const source = input.market.length ? 'Observed active listing titles and supplied product evidence' : 'Supplied product evidence only'
+  const counts = new Map<string, number>()
+  const values = [input.productTitle, input.brand, input.model, ...variantTokens(input), ...input.evidence.map((field) => field.value), ...input.market.map((item) => item.title)]
+  for (const value of values) for (const token of clean(value || '').toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 2 && !fillerWords.has(word))) counts.set(token, (counts.get(token) || 0) + 1)
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 18).map(([term, count]) => ({ term, source, confidence: Math.min(96, 55 + count * 8) }))
+}
+
+function mediaPlan(input: ListingInput) {
+  const media = input.media || []
+  const roles = ['Hero product image', 'Alternate product angle', 'Detail/evidence image', 'Variation image', 'Packaging/accessory image', 'Context image']
+  return media.slice(0, 12).map((item, index) => ({ mediaId: item.id, role: roles[index] || 'Supporting gallery image', reason: index === 0 ? 'Lead with the clearest exact-product view.' : 'Use only if the image preserves and supports the supplied product evidence.', status: item.enhanced ? 'derivative_available' : item.derivativeStatus || 'source_review' }))
 }
 
 function valueFor(input: ListingInput, label: string) {
@@ -126,23 +162,27 @@ export function buildDeterministicListing(input: ListingInput): ListingPackage {
   ]).filter((title) => validateTitle(title).passed).slice(0, 3)
 
   const sourceFacts = factualEvidence(input).filter((field) => !['Title', 'Source price', 'GTIN', 'SKU', 'MPN'].includes(field.label))
-  const detailFacts = sourceFacts.slice(0, 8).map((field) => `• ${field.label}: ${field.value}`).join('\n')
+  const detailFacts = sourceFacts.slice(0, 20).map((field) => `• ${field.label}: ${field.value}`).join('\n')
   const selectedText = input.selectedVariant?.label ? `The selected variation is ${input.selectedVariant.label}.` : 'Confirm the selected variation before purchase.'
+  const sourceDescription = clean(input.description || '')
   const description = [
     `${brand || 'Product'}${model ? ` ${model}` : ''}${input.productTitle ? ` — ${clean(input.productTitle)}` : ''}`.trim(),
     '',
+    'Product overview',
+    sourceDescription || 'Review the source evidence and gallery before adding unsupported product claims.',
+    '',
     'Condition and selection',
-    'Review source photos and product facts before purchase. The listing draft should be revised if condition, included items, or selected variation differs from the source evidence.',
+    'Review source photos and product facts before purchase. Revise this draft if condition, included items, or selected variation differs from the source evidence.',
     selectedText,
     '',
     'Verified product details',
     detailFacts || 'No additional source-backed specifications were supplied.',
     '',
-    'What is included',
-    'Only include accessories or packaging that are visibly confirmed in source evidence or entered by the seller.',
+    'Gallery and package contents',
+    'Use the gallery to confirm product identity, visible construction, included accessories, labels, and packaging. Only include accessories or packaging that are visibly confirmed in source evidence or entered by the seller.',
     '',
-    'Buyer note',
-    'Please use the selected variation, gallery, and item specifics to confirm suitability before ordering.',
+    'Buyer guidance',
+    'Please use the selected variation, gallery, item specifics, and source-backed description to confirm suitability before ordering. If a requested fact is not shown in the evidence, it remains a review item rather than a claim.',
   ].join('\n')
 
   const directPrices = input.market.filter((item) => item.matched === 'direct').map((item) => item.price + (item.shipping || 0)).filter((value) => Number.isFinite(value) && value > 0)
@@ -165,6 +205,11 @@ export function buildDeterministicListing(input: ListingInput): ListingPackage {
       'Lead with an original or rights-cleared product image; include supporting views that substantiate listing claims.',
     ],
     validation: [],
+    keywordOpportunities: keywordOpportunities(input),
+    imagePlan: mediaPlan(input),
+    bannerRecommendation: input.media?.length ? { mediaId: input.media[0]?.id || null, status: 'recommended', reason: 'Use the clearest exact-product source image as the hero/banner base; any design treatment remains reviewable.' } : { mediaId: null, status: 'needs_source', reason: 'Add a rights-cleared source image before creating an eBay hero/banner asset.' },
+    descriptionWordCount: description.split(/\s+/).filter(Boolean).length,
+    descriptionTargetWords: Math.min(1800, Math.max(250, input.descriptionTargetWords || 1800)),
     reviewRequired: true,
     automaticPublishing: false,
   }

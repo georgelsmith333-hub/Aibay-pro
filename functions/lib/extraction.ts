@@ -37,7 +37,7 @@ export type ProductExtraction = {
   title: string
   description: string
   price: { value: number | null; currency: string | null }
-  media: Array<{ url: string; alt: string; sourcePath: string }>
+  media: Array<{ url: string; previewUrl?: string; alt: string; sourcePath: string }>
   fields: ExtractedEvidence[]
   variants: ExtractedVariant[]
   sourceHealth: 'healthy' | 'blocked' | 'incomplete'
@@ -140,6 +140,30 @@ function jsonLdObjects(html: string): JsonRecord[] {
   })
 }
 
+function findEmbeddedProduct(value: unknown, depth = 0): JsonRecord | null {
+  if (depth > 6 || !value || typeof value !== 'object') return null
+  if (Array.isArray(value)) {
+    for (const item of value.slice(0, 120)) { const found = findEmbeddedProduct(item, depth + 1); if (found) return found }
+    return null
+  }
+  const record = value as JsonRecord
+  const name = stringValue(record.name) || stringValue(record.title)
+  const hasProductSignals = Boolean(record.description || record.image || record.images || record.offers || record.brand || record.sku || record.mpn)
+  if (name && hasProductSignals) return record
+  for (const child of Object.values(record).slice(0, 120)) { const found = findEmbeddedProduct(child, depth + 1); if (found) return found }
+  return null
+}
+
+function embeddedProductRecord(html: string): JsonRecord | null {
+  const scripts = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)]
+  for (const match of scripts.slice(0, 80)) {
+    const raw = match[1]?.trim() || ''
+    if (!raw || raw.length > 700_000 || !/name|title|description|offers|image|sku|mpn/i.test(raw)) continue
+    try { const found = findEmbeddedProduct(JSON.parse(raw)); if (found) return found } catch { /* non-JSON script */ }
+  }
+  return null
+}
+
 function hasType(record: JsonRecord, type: string) {
   const candidate = record['@type']
   return Array.isArray(candidate) ? candidate.includes(type) : candidate === type
@@ -150,11 +174,40 @@ function stringValue(value: unknown) {
   return ''
 }
 
-function firstImage(value: unknown, base: URL) {
-  const raw = Array.isArray(value) ? value[0] : value
-  if (typeof raw === 'string') return absoluteUrl(raw, base)
-  if (raw && typeof raw === 'object') return absoluteUrl(stringValue((raw as JsonRecord).url), base)
-  return ''
+function imageUrls(value: unknown, base: URL): string[] {
+  const values = Array.isArray(value) ? value : [value]
+  return values.flatMap((raw) => {
+    if (typeof raw === 'string') return [absoluteUrl(raw, base)].filter(Boolean)
+    if (raw && typeof raw === 'object') return [absoluteUrl(stringValue((raw as JsonRecord).url) || stringValue((raw as JsonRecord).contentUrl), base)].filter(Boolean)
+    return []
+  })
+}
+
+function visibleImageUrls(html: string, base: URL) {
+  const found: string[] = []
+  const seen = new Set<string>()
+  const add = (value: string) => { const url = absoluteUrl(decode(value), base); if (url && !seen.has(url)) { seen.add(url); found.push(url) } }
+  for (const tag of html.matchAll(/<img[^>]*>/gi)) {
+    const source = tag[0] || ''
+    const attributes = [...source.matchAll(/(?:src|data-src|data-original|data-lazy-src|data-image-url)=['"]([^'"]+)['"]/gi)]
+    attributes.forEach((attribute) => add(attribute[1] || ''))
+    const srcset = source.match(/(?:srcset|data-srcset)=['"]([^'"]+)['"]/i)?.[1] || ''
+    srcset.split(',').map((candidate) => candidate.trim().split(/\s+/)[0]).filter(Boolean).forEach(add)
+  }
+  return found.slice(0, 60)
+}
+
+function stripTags(value: string) { return decode(value.replace(/<[^>]+>/g, ' ')) }
+
+function extractTableEvidence(html: string): ExtractedEvidence[] {
+  const fields: ExtractedEvidence[] = []
+  for (const table of html.matchAll(/<table[^>]*>([\s\S]*?)<\/table>/gi)) {
+    for (const row of (table[1] || '').matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+      const cells = [...(row[1] || '').matchAll(/<(?:th|td)[^>]*>([\s\S]*?)<\/(?:th|td)>/gi)].map((cell) => stripTags(cell[1] || '')).filter(Boolean)
+      if (cells.length >= 2 && cells[0].length <= 100 && cells[1].length <= 500) fields.push({ label: cells[0], value: cells.slice(1).join(' · '), state: 'verified', method: 'Visible specification table', sourcePath: 'visible-table', confidence: 78 })
+    }
+  }
+  return fields.slice(0, 40)
 }
 
 function offerFromProduct(product: JsonRecord) {
@@ -214,26 +267,31 @@ export async function extractPublicProduct(sourceUrl: string, redirectCount = 0,
   }
   if (!response.ok) throw new Error(`The source returned HTTP ${response.status}.`)
 
-  const product = jsonLdObjects(html).find((record) => hasType(record, 'Product')) || {}
+  const jsonLdProduct = jsonLdObjects(html).find((record) => hasType(record, 'Product')) || null
+  const embeddedProduct = jsonLdProduct ? null : embeddedProductRecord(html)
+  const product = jsonLdProduct || embeddedProduct || {}
+  const metadataMethod = jsonLdProduct ? 'Structured product metadata' : embeddedProduct ? 'Embedded page state' : 'Page metadata'
   const offer = offerFromProduct(product)
   const title = stringValue(product.name) || metaContent(html, 'og:title') || decode(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '')
   const description = stringValue(product.description) || metaContent(html, 'og:description') || metaContent(html, 'description')
   const priceText = stringValue(offer.price) || metaContent(html, 'product:price:amount')
   const currency = stringValue(offer.priceCurrency) || metaContent(html, 'product:price:currency') || ''
   const priceValue = Number(priceText.replace(/[^0-9.]/g, ''))
-  const rawImage = firstImage(product.image, fetchUrl) || absoluteUrl(metaContent(html, 'og:image'), fetchUrl)
+  const mediaUrls = [...new Set([...imageUrls(product.image, fetchUrl), ...[absoluteUrl(metaContent(html, 'og:image'), fetchUrl)].filter(Boolean), ...visibleImageUrls(html, fetchUrl)])].slice(0, 60)
+  const rawImage = mediaUrls[0] || ''
   const brand = typeof product.brand === 'object' && product.brand ? stringValue((product.brand as JsonRecord).name) : stringValue(product.brand)
   const sku = stringValue(product.sku)
   const gtin = stringValue(product.gtin13) || stringValue(product.gtin14) || stringValue(product.gtin12) || stringValue(product.gtin8)
   const mpn = stringValue(product.mpn)
   const fields: ExtractedEvidence[] = []
-  const add = (label: string, value: string, path: string, confidence = 95) => { if (value) fields.push({ label, value, state: 'verified', method: 'Structured product metadata', sourcePath: path, confidence }) }
+  const add = (label: string, value: string, path: string, confidence = 95) => { if (value) fields.push({ label, value, state: 'verified', method: metadataMethod, sourcePath: path, confidence }) }
   add('Title', title, 'JSON-LD Product.name', 98)
   add('Brand', brand, 'JSON-LD Product.brand', 95)
   add('SKU', sku, 'JSON-LD Product.sku', 95)
   add('GTIN', gtin, 'JSON-LD Product.gtin*', 98)
   add('MPN', mpn, 'JSON-LD Product.mpn', 95)
   if (priceValue && Number.isFinite(priceValue)) add('Source price', `${priceValue} ${currency || 'currency unknown'}`, 'JSON-LD Product.offers', 92)
+  fields.push(...extractTableEvidence(html).filter((field) => !fields.some((existing) => existing.label.toLowerCase() === field.label.toLowerCase())))
   if (!fields.find((field) => field.label === 'Title') && title) fields.push({ label: 'Title', value: title, state: 'verified', method: 'Open Graph or page title', sourcePath: 'meta/title', confidence: 78 })
   const variants = extractOptionPairs(html)
   const warnings = [
@@ -244,7 +302,7 @@ export async function extractPublicProduct(sourceUrl: string, redirectCount = 0,
   return {
     sourceUrl: sourceRoot.toString(), canonicalUrl, sourceHost: sourceRoot.hostname.replace(/^www\./, ''), sourceKind: kind, title, description,
     price: { value: Number.isFinite(priceValue) && priceValue ? priceValue : null, currency: currency || null },
-    media: rawImage ? [{ url: rawImage, alt: `${title || 'Product'} source image`, sourcePath: product.image ? 'JSON-LD Product.image' : 'Open Graph og:image' }] : [],
+    media: mediaUrls.map((url, index) => ({ url, alt: `${title || 'Product'} source image ${index + 1}`, sourcePath: index < imageUrls(product.image, fetchUrl).length ? 'JSON-LD Product.image' : index === 0 && rawImage === absoluteUrl(metaContent(html, 'og:image'), fetchUrl) ? 'Open Graph og:image' : 'Visible image gallery' })),
     fields, variants, sourceHealth: warnings.length > 0 ? 'incomplete' : 'healthy', warnings,
     sourceDiagnostic: { status: warnings.length > 0 ? 'incomplete' : 'public_evidence', reason: warnings.length > 0 ? 'The public page was retrieved, but some expected product evidence was absent.' : 'Public structured or visible product evidence was recovered.', sourceHost: sourceRoot.hostname.replace(/^www\./, ''), adapter: adapter.id, attemptedUrl: fetchUrl.toString(), redirectCount, redirectHosts: redirectTrail }, retrievedAt: new Date().toISOString(),
   }
