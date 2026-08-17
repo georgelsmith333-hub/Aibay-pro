@@ -25,7 +25,7 @@ if not exist "%REPO%\.git" (
 cd /d "%REPO%"
 echo  Updating to the latest build...
 git fetch origin || goto :error
-git reset --hard origin/arena/01a00d12-aibay-pro || goto :error
+git reset --hard origin/arena/01a00d12-aibay-pro 2>nul || git reset --hard origin/main || goto :error
 
 echo.
 set /p TOKEN=  Paste your Cloudflare API token here and press Enter: 

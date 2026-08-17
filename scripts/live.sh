@@ -38,8 +38,9 @@ if [ -d "$DIR/.git" ]; then
   git fetch origin --quiet 2>/dev/null || true
   git checkout -q arena/01a00d12-aibay-pro 2>/dev/null \
     || git switch -q -c arena/01a00d12-aibay-pro origin/arena/01a00d12-aibay-pro 2>/dev/null \
-    || { git stash -q 2>/dev/null || true; git switch -q -c arena/01a00d12-aibay-pro origin/arena/01a00d12-aibay-pro; }
-  git pull --ff-only --quiet origin arena/01a00d12-aibay-pro 2>/dev/null || true
+    || git switch -q -c main origin/main 2>/dev/null \
+    || { git stash -q 2>/dev/null || true; git switch -q -c main origin/main; }
+  git pull --ff-only --quiet origin 2>/dev/null || true
 else
   echo "    cloning fresh"
   git clone --quiet https://github.com/georgelsmith333-hub/Aibay-pro.git "$DIR"
