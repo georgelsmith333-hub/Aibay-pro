@@ -1,46 +1,113 @@
 # AiBay Pro Production Status
 
-## Deployment
+**Author:** Manus AI  
+**Status date:** 2026-08-17  
+**Current release commit:** `61172c3`  
+**Live production URL:** [https://aibay-pro-live.pages.dev](https://aibay-pro-live.pages.dev)
 
-| Item | Current value |
+## Current deployment
+
+| Item | Verified value |
 | --- | --- |
-| Production project | `aibay-pro` Cloudflare Pages |
-| Production URL | `https://aibay-pro.pages.dev` |
-| Repository | `georgelsmith333-hub/Aibay-pro` |
-| Branch | `main` |
-| Deployment method | Direct Wrangler Pages upload; GitHub webhook builds remain unreliable |
-| Existing `aibay` project | Not modified by the autonomous-platform release |
-| Current provider credentials | eBay, AI, database, Apify, Firecrawl, and Browser Run are not configured in the isolated project |
-| Durable queue/store | Not configured; job persistence is request-only and explicitly labelled |
+| Cloudflare Pages project | `aibay-pro-live` |
+| Production URL | [aibay-pro-live.pages.dev](https://aibay-pro-live.pages.dev) |
+| Deployment target | New isolated Cloudflare account/project; the existing `aibay-pro` project was not modified by this live promotion |
+| Repository | [`georgelsmith333-hub/Aibay-pro`](https://github.com/georgelsmith333-hub/Aibay-pro) |
+| Deployed source branch | `arena/01a00d12-aibay-pro` |
+| Latest repository commit | `61172c3` — final production browser-validation record |
+| Frontend | React 19, TypeScript, Vite, responsive workspace UI |
+| Backend | Cloudflare Pages Functions / edge runtime |
+| Runtime environment | `production` |
+| API version | `v1` |
+| Deployment method | Corrected direct Pages manifest upload via `scripts/deploy_manifest.py`; Wrangler CLI was not used for the final target because its local account selection was stale |
 
-## Active production surfaces
+The production root rendered successfully with HTTP 200 and the title **“AiBay — Sell with evidence.”** Browser validation confirmed the responsive workspace navigation and the Mission Control surface, including bounded missions, opportunity scoring, price intelligence, evidence graphs, and review-gated workflows.
 
-The production app includes source-bound product import with live staged progress, source-specific session/redirect/access diagnostics, manual-evidence continuation, variant and evidence review, rights-gated media workflow, eBay draft-only export, capability routing, provider-health metadata, and the new Research Lab for candidate normalization, deduplication, scoring, and JSON/CSV/Markdown export.
+## Durable infrastructure
 
-The orchestration interface layer now includes a formal cache contract (`functions/lib/cache.ts`) that reports its mode, backend, durable state, and binding truthfully per request (best-effort edge cache in the Pages runtime, explicit `request_only` fallback otherwise), and a versioned identity-fingerprint deduplication contract (`functions/lib/dedup.ts`, fingerprint v1) that keeps the preferred entry per identity, links collapsed duplicates via `duplicateOf`, and preserves conflicting field labels for review instead of merging silently. Cache and dedup status is surfaced in `/api/capabilities`, `/api/providers`, `/api/route`, `/api/jobs`, `/api/jobs/:id`, `/api/products/extract`, and `/api/products/research`.
+| Capability | Live state | Evidence |
+| --- | --- | --- |
+| D1 database | **Configured and durable** | `/api/health` reports `providers.database: true`; `/api/infra` reports `d1: configured` |
+| KV cache | **Configured and durable** | `/api/infra` reports `kv: configured`, `cache.mode: durable`, and `backend: cloudflare-kv` |
+| Browser Run | **Ready** | `/api/infra` reports `status: ready`, `configured: true`, and the verified public canary `canary-verified-2026-08-17` |
+| Workers AI route | **Auto-configured** | `/api/infra` reports the server-side Cloudflare route as configured |
+| R2 object storage | **Unavailable on this account plan** | `/api/infra` truthfully reports `r2: unconfigured`; no feature claims R2-backed media persistence |
+| Cloudflare Queue | **Unavailable on this account plan/API state** | `/api/infra` truthfully reports `queue: unconfigured`; background queue execution is not claimed |
 
-The Pages Functions surface includes `/api/health`, `/api/capabilities`, `/api/providers`, `/api/providers/health`, `/api/route`, `/api/jobs`, `/api/jobs/:id`, `/api/imports`, `/api/products/extract`, `/api/products/research`, `/api/products/optimize`, `/api/ebay/research`, `/api/media/enhance`, `/api/exports/research`, and `/api/exports/ebay-draft`.
+The D1 database is `aibay-db` and the KV namespace is `aibay-cache`. The temporary verification records were removed after testing; the final vault read returned an empty item list while retaining the generated-listing count.
 
-## Honest limitations
+## Health and provider truthfulness
 
-The platform is not an unlimited scraper and does not include CAPTCHA bypass, anti-bot evasion, unauthorized API use, session-cookie replay, private-account access, or paywall bypass. External adapters are registry entries until their server-side credentials and documented capabilities are configured. Durable background jobs require a queue and job-store binding; the current Pages deployment does not pretend to have one. Caching is request-scoped and best-effort: the edge cache is an optimization, not a durable store, cached values retain their original `storedAt`/`expiresAt`, and every request falls back to direct source execution and validation when no cache backend exists.
+The final health response returned HTTP 200 with the following verified state:
 
-## Release checks
+```json
+{
+  "ok": true,
+  "service": "aibay-api",
+  "environment": "production",
+  "apiVersion": "v1",
+  "providers": {
+    "ebay": false,
+    "ai": false,
+    "database": true
+  }
+}
+```
 
-The release must pass function type checking, frontend production build, lint, diff checks, local endpoint smoke tests, source-kind tests, SSRF rejection tests, Research Lab browser validation, production health validation, production capability validation, and exact-source extraction validation before it is promoted.
+The `database` flag now comes from the actual D1 binding report rather than the legacy `DATABASE_URL` environment variable. This prevents a configured D1 binding from being incorrectly reported as unavailable. The provider registry remains honest: eBay and AI are not marked ready merely because the application has routes for them, while the configured infrastructure capabilities are reported independently.
 
-## Deployment API finding — 2026-08-17
+## Verified endpoint matrix
 
-The official Cloudflare Pages create-deployment API requires a multipart `manifest` form field mapping deployed file paths to content hashes for direct uploads. The fetched branch’s direct helper currently uploads only `dist.tar.gz`, so it returns HTTP 400 `A "manifest" field was expected`. The branch’s Wrangler 3 fallback also inherited the older account selection from the local Wrangler state; an explicit account-aware upload path is required for `aibay-pro-live`.
+| Endpoint | Result | Notes |
+| --- | --- | --- |
+| `GET /api/health` | **HTTP 200** | Production environment, API v1, D1 reported true |
+| `GET /api/infra` | **HTTP 200** | Durable D1 and KV; Browser Run ready; R2 and Queue unconfigured |
+| `GET /api/vault` | **HTTP 200** | D1-backed vault; final cleanup left no temporary watch records |
+| `POST /api/vault` | **Working** | Add/remove operations persisted to and removed from D1 during validation |
+| `POST /api/intelligence/opportunity` | **Working** | Explainable scoring from supplied price and market observations |
+| `POST /api/tools/profit` | **Working** | Deterministic profit and margin calculation |
+| `POST /api/tools/keywords` | **Working** | Keyword extraction/scoring route |
+| `POST /api/tools/generate` | **Working** | Listing package generation with draft-only semantics |
+| `POST /api/trends/hot` | **Working** | Trend analysis from supplied observations |
+| `POST /api/products/extract` | **Working with bounded acquisition** | Public structured/visible-source extraction with source-kind and access diagnostics |
+| `POST /api/products/research` | **Working** | Research route with source attribution and truthful fallback behavior |
+| `POST /api/route` | **Working** | Deterministic capability route planning |
+| `POST /api/ebay/research` | **Implemented, externally blockable** | Built-in public reader is used without eBay credentials; the final live probe received eBay HTTP 403 and returned `ebay_blocked` with safe alternatives rather than bypassing the block |
+| Production root `/` | **HTTP 200** | Responsive AiBay workspace rendered in the browser |
 
-## Wrangler asset-upload finding — 2026-08-17
+The final eBay probe did not fabricate results. It returned a blocked status and explicitly explained that AiBay does not bypass blocks. When eBay permits the public request, the built-in reader can return real listings without requiring an eBay developer key; official Browse API credentials remain an optional route for more stable access.
 
-The installed Wrangler 3 Pages implementation returns a manifest shaped as `/{fileName} -> file.hash` and sends `hashes: files.map(({ hash }) => hash)` to the Pages asset upsert endpoint. The deployment helper’s current manifest uses paths without leading slashes and computes its own keys, so the helper still needs to match Wrangler’s leading-slash manifest and hash pipeline before a direct API deployment can serve assets reliably. Source inspected: installed Wrangler 3.114.17 Pages deploy implementation; official API reference remains [Create deployment](https://developers.cloudflare.com/api/resources/pages/subresources/projects/subresources/deployments/methods/create/).
+## Active product-research surfaces
 
-## Binding configuration finding — 2026-08-17
+AiBay now provides a single product workspace for source-bound imports, attributable evidence, variant review, market comparison, opportunity scoring, profit calculations, keyword analysis, listing drafting, trend analysis, vault storage, media review, research missions, and draft-only exports. The UI exposes Workspace, Research Lab, Mission Control, Tools, Market Pulse, Listing History, Media Studio, and Provider Center. The design is mobile-friendly and uses explicit progress, route, evidence, and blocked-source states rather than presenting an unavailable provider as live.
 
-The official Pages Functions bindings guide states that D1 and KV bindings can be configured through the Wrangler configuration file or the Pages dashboard under **Settings → Bindings**, followed by a redeploy. The manifest API deployment served the frontend and Functions successfully but health reported `database:false`, so the project-level binding attachment still needs to be applied through the supported Pages binding configuration path.
+All evidence-oriented operations preserve source URL, acquisition method, timestamp, and confidence metadata. Unknown values remain unknown. Market comparisons are labelled by source and are not represented as guaranteed sales outcomes. eBay export is draft-only; no automatic publishing or account action is enabled.
 
-## Production verification — 2026-08-17
+## Compliance and hard limits
 
-The corrected BLAKE3/manifest deployment `ab8b6b56` serves the app at both `https://ab8b6b56.aibay-pro-live.pages.dev` and the project root `https://aibay-pro-live.pages.dev`. `GET /api/health` returns HTTP 200 and Pages reports `uses_functions: true`. The runtime health response currently reports `database:false`, confirming that D1/KV binding attachment is a separate Pages project setting and has not been assumed. The Cloudflare dashboard settings route did not render controls in the current browser session, so no unaudited dashboard mutation was performed.
+> AiBay does not bypass CAPTCHA, defeat anti-bot systems, replay private session cookies, access private accounts, evade paywalls, or use unauthorized APIs.
+
+A marketplace can still reject or rate-limit a public request. In that case AiBay stops the acquisition attempt, reports the real block, and provides a manual-evidence continuation or an official-API configuration path. This is intentional: a block is not converted into a misleading success state.
+
+The current production deployment has durable D1 and KV, but it does not have a queue binding or R2 binding. Therefore, it does not claim durable background workers, asynchronous queue execution, or R2-backed media storage. Pages requests remain bounded by the edge runtime. Any later addition of recurring monitoring or long-running background research should use an explicitly provisioned scheduler/queue architecture rather than pretending the current deployment is an unlimited autonomous crawler.
+
+## Recommended optional next configuration
+
+| Optional item | Purpose | Current requirement |
+| --- | --- | --- |
+| Enable Cloudflare R2 | Durable image/document object storage | Requires account-plan/dashboard enablement |
+| `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET` | Official eBay Browse API route | Optional; improves stability and richer official fields |
+| `APIFY_API_TOKEN` | Additional permitted public-source adapters | Optional; must remain subject to provider terms and source permissions |
+| `AI_ROUTES` or approved Workers AI configuration | AI-assisted enrichment/generation | Optional; provider readiness must remain truthful |
+
+The Cloudflare API token used during deployment was transiently stored only for the deployment session and has been deleted from the sandbox. The operator should rotate that token in Cloudflare because it was shared during the setup conversation.
+
+## Release validation
+
+The release passed function type checking, frontend production build, lint, diff checks, production health validation, infrastructure validation, D1 vault write/remove validation, endpoint smoke tests, and browser validation of the production workspace and Mission Control UI. The final branch was pushed to `arena/01a00d12-aibay-pro` and the working tree was clean after cleanup.
+
+## References
+
+[1]: https://developers.cloudflare.com/pages/functions/bindings/ Cloudflare Pages Functions bindings documentation  
+[2]: https://developers.cloudflare.com/api/resources/pages/subresources/projects/subresources/deployments/methods/create/ Cloudflare Pages create-deployment API reference  
+[3]: https://developer.ebay.com/api-docs/buy/browse/overview.html eBay Browse API overview
