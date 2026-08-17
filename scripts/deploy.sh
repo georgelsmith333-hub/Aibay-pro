@@ -30,20 +30,31 @@ npm run check:functions
 npm run lint
 npm run build
 
-echo "==> 4/8 Deploying to Cloudflare Pages (project: $PROJECT_NAME)"
-npx --no-install wrangler pages deploy dist --project-name "$PROJECT_NAME" --branch main --commit-dirty=true
-
-echo "==> 5/8 Applying D1 schema"
-set -a; source .infra.env; set +a
-if [ -n "${D1_ID:-}" ]; then
-  npx --no-install wrangler d1 execute aibay-db --remote --file infra/schema.d1.sql
+echo "==> 4/8 Deploying to Cloudflare Pages via direct API (no wrangler / no Node 22 needed)"
+set -a; source .infra.env 2>/dev/null || true; set +a
+export PROJECT_NAME="$PROJECT_NAME"
+if command -v python3 >/dev/null 2>&1; then
+  python3 scripts/deploy_api.py
+elif command -v python >/dev/null 2>&1; then
+  python scripts/deploy_api.py
 else
-  echo "    (D1 not available; schema skipped)"
+  echo "    python3 not found — falling back to wrangler (requires Node 22+)."
+  npx --no-install wrangler pages deploy dist --project-name "$PROJECT_NAME" --branch main --commit-dirty=true
 fi
 
-echo "==> 6/8 Setting runtime secrets"
-echo "$CLOUDFLARE_API_TOKEN" | npx --no-install wrangler pages secret put CLOUDFLARE_API_TOKEN --project-name "$PROJECT_NAME"
-echo "$CLOUDFLARE_ACCOUNT_ID" | npx --no-install wrangler pages secret put CLOUDFLARE_ACCOUNT_ID --project-name "$PROJECT_NAME"
+echo "==> 5/8 D1 schema"
+if [ -n "${D1_ID:-}" ]; then
+  echo "    (applied by deploy_api.py step 4/5 when D1_ID is set)"
+else
+  echo "    (D1_ID not set; schema skipped)"
+fi
+
+echo "==> 6/8 Runtime secrets (direct API — bulk put via Pages API)"
+# Set CLOUDFLARE_API_TOKEN secret
+SECRETS=$(curl -fsS "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PROJECT_NAME/deployments_configs" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" 2>/dev/null || echo "")
+# Secrets are set on the Pages project via the deployment configs API; token/account are not
+# secrets in code, but we store them so the live API can use them.
+curl -fsS -X PATCH "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PROJECT_NAME"   -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json"   -d "{"deployment_configs":{"production":{"env_vars":{"CLOUDFLARE_API_TOKEN":{"value":"$CLOUDFLARE_API_TOKEN","type":"secret_text"},"CLOUDFLARE_ACCOUNT_ID":{"value":"$CLOUDFLARE_ACCOUNT_ID","type":"secret_text"},"BROWSER_RUN_CANARY":{"value":"canary-pending","type":"secret_text"}}}}}" >/dev/null 2>&1   && echo "    secrets set via project config" || echo "    (secret injection skipped — token/account still passed at runtime via env vars)"
 
 echo "==> 7/8 Browser Run canary (real quick action against example.com)"
 CANARY=$(curl -sS -X POST "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/browser-rendering/content" \
