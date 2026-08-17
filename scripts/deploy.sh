@@ -13,18 +13,26 @@ if [ ! -f scripts/ensure-infra.mjs ]; then
   exit 1
 fi
 
-if ! command -v pnpm >/dev/null 2>&1; then
-  echo "    pnpm not found — installing via npm..."
-  npm install -g pnpm
-  export PATH="$PATH:$(npm prefix -g)"
+# pnpm 11 requires Node 22+; the operator's Node 20 needs pnpm 9 (Node 18+).
+NODE_MAJOR=$(node -p "process.versions.node.split('.')[0]")
+if [ "$NODE_MAJOR" -ge 22 ]; then
+  export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+  corepack enable 2>/dev/null || true
+  command -v pnpm >/dev/null 2>&1 || npm install -g pnpm
+else
+  echo "    Node $NODE_MAJOR detected — using pnpm 9 (compatible with Node 20)."
+  npm install -g pnpm@9 2>/dev/null || true
 fi
-command -v pnpm >/dev/null 2>&1 || { echo "ERROR: pnpm still not found after install. Run: npm install -g pnpm  then re-run this script."; exit 1; }
+export PATH="$PATH:$(npm prefix -g)"
+command -v pnpm >/dev/null 2>&1 || { echo "ERROR: pnpm not available. Run: npm install -g pnpm@9  then re-run."; exit 1; }
+pnpm --version
 
 echo "==> 1/7 Verifying Cloudflare token"
 curl -fsS "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/tokens/verify" -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" | head -c 200
 echo
 
 echo "==> 2/7 Ensuring infrastructure (D1, KV, R2, Queue)"
+echo "    (R2/Queue are optional — if your plan needs enabling them in the dashboard, deploy continues without them.)"
 node scripts/ensure-infra.mjs
 
 echo "==> 3/7 Building production bundle"
