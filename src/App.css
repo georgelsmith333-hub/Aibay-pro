@@ -715,3 +715,9 @@ p { color: var(--ink-soft); font-size: 13px; line-height: 1.65; }
   .page-intro h1 { font-size: 25px; }
   .surface-card { backdrop-filter: blur(8px); }
 }
+
+
+.market-provenance { display: flex; gap: 6px; align-items: flex-start; margin: -6px 0 12px; color: var(--ink-soft); font: 500 9px/1.45 'DM Mono', monospace; overflow-wrap: anywhere; }
+.market-provenance svg { flex: 0 0 auto; margin-top: 1px; color: var(--green); }
+.market-image-fallback { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 8px; background: linear-gradient(135deg, #edf4f1, #f6ede1); color: #6e867b; }
+@media (max-width: 560px) { .market-provenance { font-size: 8px; } .market-image-fallback { width: 34px; height: 34px; } }

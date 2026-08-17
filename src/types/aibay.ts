@@ -76,6 +76,8 @@ export interface MarketSnapshot {
   listings: MarketListing[]
   commonTerms: string[]
   itemSpecificGaps: string[]
+  provider?: string
+  provenance?: { sourceUrl?: string; method?: string; retrievedAt?: string }
 }
 
 export interface OptimizationRun {
