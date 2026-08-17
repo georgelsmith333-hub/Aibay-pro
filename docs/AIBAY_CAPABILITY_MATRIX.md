@@ -8,7 +8,7 @@
 
 **Source branch:** `arena/01a00d12-aibay-pro`
 
-**Latest verified commit:** `157c790`
+**Latest verified commit:** `1cec23b`
 
 ## Executive status
 
@@ -22,8 +22,8 @@ The production contract remains deliberately honest. eBay research currently ret
 
 | Capability | Production state | Evidence of implementation | User-visible behavior | Required provider or credential |
 |---|---|---|---|---|
-| Public product extraction | Live and bounded | `functions/lib/extraction.ts`, `/api/products/extract` | Structured metadata, Open Graph fields, variants, media, confidence, and diagnostics are retained when the public page exposes them. | None for public sources |
-| Blocked-source continuation | Live | `BlockedSource`, `ManualEvidenceForm`, exact-source preservation | Protected sources show a safe research handoff, an **Open exact source** action, manual evidence fields, and no replacement product. | None |
+| Public product extraction | Live and bounded | `functions/lib/extraction.ts`, `/api/products/extract` | Structured metadata, Open Graph fields, embedded state, full gallery, visible specifications, variants, media, confidence, and diagnostics are retained when the public page exposes them. | None for public sources |
+| Blocked-source continuation | Live | `BlockedSource`, `ManualEvidenceForm`, exact-source preservation | Protected sources show a safe research handoff, an **Open exact source** action, manual evidence fields, a staged progress rail, and no replacement product. | None |
 | AliExpress/session-dependent handling | Live and policy-correct | Adapter detects cookie-sync/login redirects | Returns `409 session_required`; the original URL is preserved and the user can continue manually. | None; bypass is intentionally unavailable |
 | eBay listing URL classification | Live | `sourceKind: listing` and `marketResearch` response contract | An eBay item URL is identified as a listing resource and offers an eBay market-search continuation. | None |
 | eBay official Browse API | Ready only when configured | Server-side OAuth path in `/api/ebay/research` | Uses `gtin` directly or keyword/MPN shaping, returns active listing observations and provenance. | `EBAY_CLIENT_ID` and `EBAY_CLIENT_SECRET` |
@@ -36,12 +36,12 @@ The production contract remains deliberately honest. eBay research currently ret
 | Durable D1 job state | Live | `research_jobs` table, `createJob`, `updateJob`, `readJob` | Research job IDs can be polled and retain the actual result or blocked state. | Georgelsmith D1 binding `DB` |
 | Queue producer | Live with explicit-consumer guard | `functions/lib/queue.ts`, `/api/jobs/research` | Publishes only when `JOB_QUEUE` is bound and `JOB_CONSUMER_ENABLED=true`; otherwise executes synchronously and reports why. | Queue binding plus deployed consumer Worker |
 | Job polling | Live | `/api/jobs/:id` | Distinguishes queued, running, complete, blocked, unavailable, and failed states. | D1 for durable polling |
-| R2 source media upload | Live and rights-gated | `/api/media/upload` | Multipart uploads are stored under `sources/` only after `rightsConfirmed=true`; unavailable storage is not presented as durable. | `MEDIA_BUCKET` R2 binding |
+| R2 source media upload | Live and rights-gated | `/api/media/upload` | Multipart uploads are stored under `sources/` or `derivatives/` only after `rightsConfirmed=true`; unavailable storage is not presented as durable. | `MEDIA_BUCKET` R2 binding |
 | R2 object reads | Live and constrained | `/api/media/object` | Only `sources/` and `derivatives/` object prefixes are readable. | `MEDIA_BUCKET` R2 binding |
-| Media derivative request | Review-only unless provider exists | `/api/media/enhance` | Does not mark a derivative ready when the provider is unavailable; the original remains unchanged. | Approved derivative provider, if enabled |
-| Draft-only eBay listing optimization | Live | `/api/products/optimize` and workspace controls | Generates a reviewable title, description, item-specific draft, strategy, and validation package. | None for deterministic route; optional AI routes may rank supplied candidates |
+| Media preview and derivative workflow | Live for preview and deterministic square derivative; AI enhancement remains optional | `/api/media/preview`, `/api/media/upload`, browser canvas flow | Same-origin preview renders public image sources; the browser can create a real 2000×2000 contain-preserving JPEG and persist it to `derivatives/`. AI semantic enhancement is never claimed without a configured provider. | R2 binding; optional approved image provider for semantic enhancement |
+| Draft-only eBay listing optimization | Live | `/api/products/optimize` and workspace controls | Generates a reviewable title, description, item-specific draft, strategy, validation package, keyword opportunities, image roles, hero/banner guidance, and description-depth metadata in the same contextual session. | None for deterministic route; optional AI routes may rank supplied candidates |
 | Automatic eBay publishing | Disabled by design | Export controls and UI policy | No marketplace account is modified and no listing is published automatically. | Not enabled |
-| Responsive workspace | Live | React workspace, mobile CSS, persistent sidebar, progress rail | Works across compact and large screens with source, evidence, market, media, and draft views. | None |
+| Responsive workspace | Live | React workspace, mobile CSS, persistent sidebar, progress rail | Works across compact and large screens with source, evidence, market, media, contextual optimization-session, and draft views. | None |
 
 ## Provider and credential matrix
 
@@ -90,8 +90,8 @@ The following checks were executed against the live production URL after the lat
 | Seller research with public username | HTTP 409 `seller_page_blocked` | Seller observation is bounded and does not bypass eBay access controls. |
 | Seller request with no username or URL | HTTP 400 `seller_required` | Input validation is explicit. |
 | R2 read with unauthorized prefix | HTTP 400 `invalid_media_key` | Object reads are constrained to approved prefixes. |
-| R2 upload without rights confirmation | HTTP 400 `rights_confirmation_required` | Media persistence is rights-gated. |
-| Public manufacturer sample | HTTP 409 `access_controlled` from the selected public page | The route reported the actual access-control response; no manufacturer data was invented. |
+| R2 upload without rights confirmation | HTTP 400 `rights_confirmation_required`; valid derivative upload stored in R2 and read back through constrained object route | Media persistence is rights-gated and durable only when the binding is available. |
+| Public manufacturer samples | HTTP 409 `access_controlled` from selected public pages | The route reported actual production-edge access-control responses; no manufacturer data was invented. |
 
 ## Cost and free-tier boundaries
 
