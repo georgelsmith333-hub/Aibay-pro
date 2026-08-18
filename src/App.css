@@ -765,3 +765,90 @@ p { color: var(--ink-soft); font-size: 13px; line-height: 1.65; }
 .sm-price strong { font-size: 14px; }
 .sm-price em { display: block; color: var(--ink-soft); font-size: 10px; }
 @media (max-width: 700px) { .wf-item-body { grid-template-columns: 1fr 1fr; } .sm-offer { grid-template-columns: 90px minmax(0, 1fr); } .sm-price { grid-column: 2; text-align: left; } }
+
+/* ---- Sold evidence ---- */
+.se-result { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--line); }
+.se-range { display: flex; align-items: center; gap: 16px; margin: 12px 0; flex-wrap: wrap; }
+.se-range span { font-size: 12px; color: var(--ink-soft); }
+.se-range strong { color: var(--ink); font-size: 14px; margin-left: 4px; }
+.se-list { display: grid; gap: 6px; max-height: 340px; overflow-y: auto; }
+.se-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; }
+.se-row strong, .se-row small { display: block; }
+.se-row strong { font-size: 11.5px; }
+.se-row small { color: var(--ink-soft); font-size: 10px; margin-top: 2px; }
+.se-price { font-size: 13px; font-weight: 800; color: var(--green-dark); }
+
+/* ============================================================
+   PREMIUM POLISH v3 — dashboard sheen, stat cards, hero glow
+   ============================================================ */
+
+/* Stat summary cards (scan-summary, provider-summary) — gradient numbers */
+.scan-summary span, .provider-summary-card, .analysis-mini {
+  position: relative; overflow: hidden;
+}
+.scan-summary span::after, .analysis-mini::after {
+  content: ''; position: absolute; inset: 0 0 auto 0; height: 2px;
+  background: linear-gradient(90deg, var(--accent-1), var(--accent-3));
+  opacity: .5;
+}
+.scan-summary strong { font-family: var(--font-display); }
+
+/* Page intro hero — subtle spotlight + larger display */
+.page-intro { position: relative; }
+.page-intro::after {
+  content: ''; position: absolute; left: 0; right: 0; bottom: -6px; height: 1px;
+  background: linear-gradient(90deg, rgba(20,160,110,.25), rgba(109,79,216,.15), transparent);
+}
+
+/* Section headings — accent tick */
+.section-heading h2 { position: relative; padding-left: 14px; }
+.section-heading h2::before {
+  content: ''; position: absolute; left: 0; top: 18%; bottom: 18%; width: 4px; border-radius: 4px;
+  background: linear-gradient(180deg, var(--accent-1), var(--accent-3));
+  box-shadow: 0 0 10px rgba(52, 211, 153, .4);
+}
+
+/* Keyword chips — gradient */
+.keyword {
+  background: linear-gradient(135deg, rgba(232, 249, 241, .9), rgba(226, 235, 255, .9));
+  border: 1px solid rgba(20, 160, 110, .18);
+}
+
+/* Table-like rows — zebra + hover glow */
+.market-row:nth-child(odd), .se-row:nth-child(odd), .scan-row:nth-child(odd) { background: rgba(243, 248, 245, .55); }
+
+/* Tool tabs — icon dots */
+.tool-tab { display: inline-flex; align-items: center; gap: 6px; }
+.tool-tab::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--line-dark); transition: background .2s, box-shadow .2s; }
+.tool-tab.selected::before { background: var(--accent-1); box-shadow: 0 0 8px rgba(52, 211, 153, .7); }
+
+/* Working state — soft pulse ring */
+.working-state { position: relative; }
+.working-state::before {
+  content: ''; position: absolute; inset: -2px; border-radius: 18px; pointer-events: none;
+  background: linear-gradient(120deg, rgba(52,211,153,.25), rgba(167,139,250,.18), rgba(34,211,238,.22));
+  filter: blur(10px); z-index: -1; animation: work-pulse 2.4s ease-in-out infinite;
+}
+@keyframes work-pulse { 0%,100% { opacity: .5; } 50% { opacity: 1; } }
+
+/* Status pills — stronger contrast */
+.status-pill { font-weight: 700; }
+
+/* Sidebar — premium active gradient + glow */
+.nav-item.active { background: linear-gradient(90deg, rgba(52,211,153,.18), rgba(167,139,250,.10)); }
+.connection-mark { box-shadow: 0 0 16px rgba(52, 211, 153, .55); }
+
+/* Empty states — centered + friendly */
+.history-empty, .no-media-state, .route-empty, .market-empty-note {
+  text-align: left;
+}
+.history-empty { display: grid; justify-items: start; gap: 10px; }
+
+/* Toast — premium bottom-center */
+.toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: 8px; }
+
+/* Responsive hero */
+@media (max-width: 760px) {
+  .page-intro h1 { font-size: 26px; }
+  .scan-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

@@ -9,8 +9,21 @@
 // blocked sources produce honest states; no fabricated listings or prices.
 
 import { searchEbayLocal } from './ebay-scraper'
+import { searchSoldLocal, soldStats } from './sold'
 import { findSuppliers, type SupplierOffer } from './suppliers'
 import { scoreOpportunity, type OpportunityInput } from './intelligence'
+
+export type SoldEvidence = {
+  count: number
+  totalSoldValue: number | null
+  min: number | null
+  max: number | null
+  average: number | null
+  median: number | null
+  state: string
+  withDates: number
+  note: string
+}
 
 export type WinningItem = {
   rank: number
@@ -20,6 +33,7 @@ export type WinningItem = {
   ebayPrice: number | null
   ebayCurrency: string | null
   ebaySold: number | null
+  soldEvidence: SoldEvidence | null
   supplier: { source: string; title: string; price: number | null; currency: string | null; url: string; minOrder: string | null } | null
   grossMarginPct: number | null
   marginNote: string
@@ -34,6 +48,7 @@ export type WinningFinderResult = {
   scanned: number
   analyzed: number
   items: WinningItem[]
+  sold: SoldEvidence | null
   note: string
   retrievedAt: string
 }
@@ -43,8 +58,24 @@ const MAX_ANALYZE = 8
 export async function findWinningItems(keyword: string, options: { maxItems?: number; matchThreshold?: number } = {}): Promise<WinningFinderResult> {
   const retrievedAt = new Date().toISOString()
   const ebay = await searchEbayLocal(keyword, 20)
+  // Sold evidence: public completed-items observations (zero keys).
+  let sold: SoldEvidence | null = null
+  try {
+    const soldResult = await searchSoldLocal(keyword, 40)
+    const stats = soldStats(soldResult.listings)
+    sold = {
+      count: soldResult.count,
+      totalSoldValue: stats.totalSoldValue,
+      min: stats.min, max: stats.max, average: stats.average, median: stats.median,
+      state: stats.state,
+      withDates: soldResult.listings.filter((listing) => listing.soldDate).length,
+      note: soldResult.note,
+    }
+  } catch {
+    sold = { count: 0, totalSoldValue: null, min: null, max: null, average: null, median: null, state: 'INSUFFICIENT_EVIDENCE', withDates: 0, note: 'Sold observations were unavailable or blocked.' }
+  }
   if (ebay.items.length === 0) {
-    return { status: 'insufficient_evidence', keyword, scanned: 0, analyzed: 0, items: [], note: ebay.note + ' No eBay listings were available to analyze.', retrievedAt }
+    return { status: 'insufficient_evidence', keyword, scanned: 0, analyzed: 0, items: [], sold, note: ebay.note + ' No eBay listings were available to analyze.', retrievedAt }
   }
   const analyzed = ebay.items.slice(0, Math.min(MAX_ANALYZE, options.maxItems ?? MAX_ANALYZE))
   const items: WinningItem[] = []
@@ -81,6 +112,7 @@ export async function findWinningItems(keyword: string, options: { maxItems?: nu
       ebayPrice,
       ebayCurrency: listing.currency,
       ebaySold: listing.soldCount,
+      soldEvidence: sold,
       supplier: cheapest ? { source: cheapest.sourceLabel, title: cheapest.title, price: cheapest.price, currency: cheapest.currency, url: cheapest.url, minOrder: cheapest.minOrder } : null,
       grossMarginPct,
       marginNote: grossMarginPct != null ? `Gross margin estimate (before fees/shipping): ${grossMarginPct}%.` : 'Margin requires both an eBay price and a matched supplier price.',
@@ -99,6 +131,7 @@ export async function findWinningItems(keyword: string, options: { maxItems?: nu
     scanned: ebay.items.length,
     analyzed: sorted.length,
     items: sorted,
+    sold,
     note: [
       `Scanned ${ebay.items.length} eBay listing(s) for "${keyword}", analyzed ${sorted.length}.`,
       withMargin.length ? `${withMargin.length} candidate(s) show a positive gross margin (before fees).` : 'No candidate showed a positive gross margin — review fees before acting.',
