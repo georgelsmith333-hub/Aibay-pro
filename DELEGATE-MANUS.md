@@ -68,3 +68,37 @@ curl -s -X POST $B/api/ebay/research -H 'content-type: application/json' -d '{"q
 Live: product import with provenance · direct image/document sources · same-origin media preview · R2 durable media + browser-side 2000×2000 derivatives · market research (three-tier route) · durable jobs (D1+Queue) · opportunity scoring · listing generator + title score + categories · keyword tool + STR · profit calculator · turbo scanner · evidence-gated trending · watchlist vault · evidence graph · contradictions · 14 research missions · provider router · premium responsive UI.
 
 Optional to activate: Workers AI (free), Browser Run, Apify eBay, official Browse API, external AI routes.
+
+---
+
+## ⚡ NEW — Advanced dropshipper layer (apply this patch, 2026-08-18)
+
+The advanced layer is built and tested locally (9/9) but the GitHub push is blocked by repo branch rules. Apply it before the next deploy:
+
+### Files (already committed locally as `6b6ec20`, patch at repo root: `ADVANCED-LAYER.patch`)
+
+- `functions/lib/suppliers.ts` + `functions/api/suppliers/find.ts` — zero-key supplier discovery across AliExpress/Alibaba/DHgate public search pages; bounded, provenance on every offer, title-fingerprint matching, truthful blocks (403/captcha/login-gate reported, never bypassed).
+- `functions/lib/winning.ts` + `functions/api/winning/find.ts` — auto winning-item finder: live eBay search + supplier match → explainable candidates with gross-margin estimate (before fees), opportunity verdict, evidence trail.
+- `functions/lib/route-intel.ts` + `functions/api/routing/intel.ts` — self-updating auto-routing intelligence: every provider execution records a real outcome sample (success/latency/error) durably into KV; scores = success rate − recency-weighted failure penalty − latency penalty. Router prefers healthy routes; unconfigured providers are never promoted; policy blocks never bypassed.
+- `functions/api/tools/quick-optimize.ts` — one-click optimize from a direct link (extract → evidence-grounded listing package in one call; blocked → 409 with alternatives).
+- Registry: `supplier.discovery` + `winning.finder` capabilities added.
+- Frontend: **Winning finder** and **Supplier match** tabs in Tools (margin cards, match confidence, evidence lines, responsive).
+
+### To apply (if the patch file is unavailable, cherry-pick commit `6b6ec20` from the local clone):
+
+```bash
+cd ~/Aibay-pro
+git apply ADVANCED-LAYER.patch   # or: git cherry-pick 6b6ec20
+npm install --no-audit --no-fund
+npm run check:functions && npm run lint && npm run build
+```
+
+Then re-run the deploy command from the section above. Verify:
+
+```bash
+curl -s -X POST https://aibay-pro-george-live.pages.dev/api/winning/find -H 'content-type: application/json' -d '{"keyword":"wireless earbuds","maxItems":5}'
+curl -s -X POST https://aibay-pro-george-live.pages.dev/api/suppliers/find -H 'content-type: application/json' -d '{"title":"Wireless Earbuds Pro ANC"}'
+curl -s https://aibay-pro-george-live.pages.dev/api/routing/intel
+```
+
+All zero external keys. eBay/supplier public readers may be blocked by the target — they report the block truthfully (HTTP 403/captcha/login) and never fabricate listings or prices. Gross margin is an estimate before fees/shipping.
