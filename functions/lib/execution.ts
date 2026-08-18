@@ -18,6 +18,7 @@ import { planRoute, validateSourceForTask, type RouteDecision, type TaskKind } f
 import type { ProviderAdapter, AdapterHealth, NormalizedObservation, ClassifiedFailure } from './adapter'
 import { createAdapterRegistry } from './adapters'
 import { createCacheStore, type CacheHealth } from './cache'
+import { recordRouteIndex, recordRouteSample } from './route-intel'
 
 export type AttemptRecord = {
   attempt: number
@@ -152,11 +153,15 @@ export async function executeTask(env: Record<string, unknown>, task: TaskKind, 
       const signal = AbortSignal.timeout(adapter.metadata.limits.timeoutMs)
       try {
         const result = await adapter.execute({ task, capabilityId: route.capabilityId, sourceUrl, env, routeId: route.routeId, attempt, maxAttempts, signal })
+        await recordRouteIndex(env, providerId, task)
+        await recordRouteSample(env, { providerId, task, ok: true, latencyMs: Date.now() - Date.parse(attemptStartedAt), at: new Date().toISOString() }).catch(() => undefined)
         success = result
         attempts.push({ attempt, providerId, providerVersion: adapter.metadata.version, routeId: route.routeId, startedAt: attemptStartedAt, endedAt: result.meta.endedAt, outcome: 'success' })
         break
       } catch (error) {
         const failure = adapter.classifyError(error)
+        await recordRouteIndex(env, providerId, task)
+        await recordRouteSample(env, { providerId, task, ok: false, latencyMs: Date.now() - Date.parse(attemptStartedAt), errorCategory: failure.category, at: new Date().toISOString() }).catch(() => undefined)
         lastFailure = failure
         attempts.push({ attempt, providerId, providerVersion: adapter.metadata.version, routeId: route.routeId, startedAt: attemptStartedAt, endedAt: new Date().toISOString(), outcome: failure.retryable ? 'retryable_failure' : 'terminal_failure', error: failure })
         if (isPolicyTerminal(failure)) { blockedByPolicy = true; break }

@@ -74,3 +74,15 @@ Step-4 (`6fcdcfc`) and the Step-5 foundation in this working tree are **not depl
 | Cross-source collisions | Per-concern namespaces (`public-extraction`, `registry`, `route`, `jobs`, `capabilities`); keys are full canonical URLs | Closed |
 | Conflict info lost downstream | Preserved through `normalizeAndDeduplicate` (conflicts + conflictCount) and JSON export. CSV/Markdown export columns do not include `conflicts` (fixed column set) — noted, not changed to avoid altering the export contract | Accepted residual |
 | `web.scrape.static` / `web.search` absent from registry while documented | Added both capabilities with truthful statuses; `public_scrape` now routes to `local.evidence`, `public_search` to `not_configured` Firecrawl | Closed in Step 5 |
+
+## Advanced dropshipper layer (2026-08-18)
+
+| Capability | Verification |
+| --- | --- |
+| Supplier discovery (`functions/lib/suppliers.ts`, `/api/suppliers/find`) | VERIFIED MOCKED E2E (9/9 incl.): AliExpress/Alibaba/DHgate public-page readers, zero keys, title-fingerprint matching, blocked/login-redirect truthfulness, margin note |
+| Auto winning-item finder (`functions/lib/winning.ts`, `/api/winning/find`) | VERIFIED MOCKED E2E: live eBay scan + supplier match → explainable items with gross-margin estimate (before fees), opportunity verdict, evidence trail |
+| Auto-routing intelligence (`functions/lib/route-intel.ts`, `/api/routing/intel`) | VERIFIED LOCAL + MOCKED E2E: success-rate + recency-weighted failure scoring; executor records real outcome samples durably (KV) and the index is self-maintaining |
+| One-click optimize from link (`/api/tools/quick-optimize`) | VERIFIED MOCKED E2E: extract → evidence-grounded listing package in one call; blocked sources return 409 with alternatives |
+| Frontend | VERIFIED LOCAL: Winning finder + Supplier match tabs in Tools (build clean, responsive) |
+
+Honest boundary: public-page readers report blocks truthfully (403/captcha/login-gate) and never fabricate listings or prices. "Live" = current public page data at request time; gross margin is an estimate before fees/shipping.
