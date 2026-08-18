@@ -14,6 +14,7 @@
 
 import { assertSafePublicUrl } from './security'
 import { classifyFailure } from './orchestrator'
+import { fetchViaJinaReader } from './reader-fallback'
 
 export const EBAY_SEARCH_HOST = 'www.ebay.com'
 const MAX_REDIRECTS = 3
@@ -25,7 +26,7 @@ type SearchIdentity = { gtin?: string; mpn?: string }
 type ListingProvenance = {
   sourceUrl: string
   capturedAt: string
-  method: 'public-search-page-v1'
+  method: 'public-search-page-v1' | 'public-search-page-v1-via-jina-reader'
 }
 
 export type EbayScrapeListing = ListingProvenance & {
@@ -43,7 +44,7 @@ export type EbayScrapeListing = ListingProvenance & {
 
 export type EbayScrapeResult = {
   provider: 'local.ebay-scraper'
-  method: 'public-search-page-v1'
+  method: 'public-search-page-v1' | 'public-search-page-v1-via-jina-reader'
   query: string
   marketplace: 'EBAY_US'
   sourceUrl: string
@@ -200,6 +201,38 @@ function classifyResponse(response: Response, html?: string) {
   if (html && /captcha|verify you are human|access denied|enable cookies/i.test(html)) throw Object.assign(new Error('eBay presented a challenge page. AiBay does not solve CAPTCHAs or imitate browsers.'), { code: 'blocked_by_policy' })
 }
 
+function parseItemsFromText(text: string, query: string): EbayScrapeListing[] {
+  const items: EbayScrapeListing[] = []
+  const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean)
+  const priceRe = /\$\s?([0-9][0-9.,]*)/i
+  for (let i = 0; i < lines.length - 1; i += 1) {
+    const titleLine = lines[i]
+    const priceLine = lines[i + 1]
+    if (titleLine.length < 15 || titleLine.length > 180) continue
+    if (!priceRe.test(priceLine)) continue
+    const price = parsePrice(priceLine)
+    const soldMatch = lines.slice(i, i + 3).join(' ').match(/([\d,]+)\s*sold/i)
+    const urlMatch = lines.slice(i, i + 3).join(' ').match(/https?:\/\/[^\s]+/i)
+    items.push({
+      title: titleLine,
+      url: urlMatch?.[0] ?? `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(query)}`,
+      image: null,
+      price: price?.value ?? null,
+      currency: price?.currency ?? null,
+      condition: null,
+      seller: null,
+      soldCount: soldMatch ? Number(soldMatch[1].replace(/,/g, '')) : null,
+      watchers: null,
+      shipping: null,
+      sourceUrl: urlMatch?.[0] ?? '',
+      capturedAt: new Date().toISOString(),
+      method: 'public-search-page-v1-via-jina-reader',
+    })
+    i += 1
+  }
+  return items
+}
+
 export async function searchEbayLocal(query: string, limit = 20, _env: Record<string, unknown> = {}, identity: SearchIdentity = {}): Promise<EbayScrapeResult> {
   const capturedAt = new Date().toISOString()
   let lastError: unknown = null
@@ -233,6 +266,29 @@ export async function searchEbayLocal(query: string, limit = 20, _env: Record<st
     } catch (error) {
       lastError = error
       const code = (error as { code?: string } | null)?.code
+      if (code === 'blocked_by_policy') {
+        // Fallback: documented third-party public reader (opt-in via
+        // USE_JINA_READER=1). The edge IP may be blocked; the reader fetches
+        // the same public page through its own infrastructure. Provider is
+        // labeled truthfully as jina-reader — never a first-party scrape.
+        const jina = await fetchViaJinaReader(search.toString(), _env)
+        if (jina) {
+          const jinaItems = parseItemsFromText(jina.text, candidate)
+          if (jinaItems.length) {
+            return {
+              provider: 'local.ebay-scraper',
+              method: 'public-search-page-v1-via-jina-reader',
+              query: query.slice(0, 160),
+              marketplace: 'EBAY_US',
+              sourceUrl: search.toString(),
+              capturedAt: jina.retrievedAt,
+              resultCount: jinaItems.length,
+              items: jinaItems.slice(0, limit),
+              note: `Direct fetch was blocked; used the documented public Jina Reader endpoint (provider: jina-reader). Parsed ${jinaItems.length} listing(s) from the public search results page.`,
+            }
+          }
+        }
+      }
       if (code !== 'blocked_by_policy' && code !== 'rate_limited') throw error
       // A supplied GTIN/MPN may be a valid search refinement. Do not retry
       // challenge HTML; only move to the next explicit identifier candidate.

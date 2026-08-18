@@ -277,6 +277,16 @@ export async function extractPublicProduct(sourceUrl: string, redirectCount = 0,
     const redirectedAdapter = adapterFor(redirectedUrl)
     const nextHosts = [...redirectTrail, redirectedUrl.hostname.replace(/^www\./, '')]
     if (redirectedAdapter.requiresSessionForRedirect?.(redirectedUrl)) {
+      // Bounded alternate-host retry (e.g. aliexpress .us <-> .com): the same
+      // item may be served directly on the sibling public locale without any
+      // session. This is not a bypass — it is the same public resource on the
+      // site's own public locale.
+      if (redirectCount === 0 && adapter.alternateFor) {
+        const alternate = adapter.alternateFor(fetchUrl)
+        if (alternate && !visited.has(alternate.toString())) {
+          return extractPublicProduct(alternate.toString(), redirectCount + 1, visited, nextHosts)
+        }
+      }
       return emptyExtraction(sourceRoot, fetchUrl.toString(), sessionRedirectDiagnostic(sourceRoot, redirectedUrl, adapter, redirectCount + 1, nextHosts))
     }
     return extractPublicProduct(redirectedValue, redirectCount + 1, visited, nextHosts)

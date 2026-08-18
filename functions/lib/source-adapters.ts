@@ -17,6 +17,8 @@ type SourceAdapter = {
   matches: (url: URL) => boolean
   normalize: (url: URL) => URL
   requiresSessionForRedirect?: (url: URL) => boolean
+  /** Bounded alternate host for the same resource (e.g. .us <-> .com). */
+  alternateFor?: (url: URL) => URL | null
 }
 
 const documentExtension = /\.(?:pdf|docx?|xlsx?|pptx?)$/i
@@ -49,9 +51,20 @@ const aliExpressAdapter: SourceAdapter = {
     const cleaned = removeTracking(url)
     const match = cleaned.pathname.match(/^\/item\/(\d+)\.html$/i)
     if (!match) return cleaned
-    return new URL(`https://www.aliexpress.us/item/${match[1]}.html`)
+    // Preserve the given public locale (.com or .us); the alternate host is
+    // only used as a bounded retry when the first locale forces a
+    // cookie-sync gate. Never rewrite back — that would ping-pong.
+    return new URL(`https://${cleaned.hostname}/item/${match[1]}.html`)
   },
   requiresSessionForRedirect: (url) => /(^|\.)login\.aliexpress\.(com|us)$/i.test(url.hostname) || /\/sync_cookie_(?:read|write)\.htm$/i.test(url.pathname),
+  alternateFor: (url) => {
+    const match = url.pathname.match(/^\/item\/(\d+)\.html$/i)
+    if (!match) return null
+    const from = url.hostname.replace(/^www\./, '')
+    const alternate = from === 'aliexpress.com' ? 'www.aliexpress.us' : 'www.aliexpress.com'
+    if (from === alternate.replace(/^www\./, '')) return null
+    return new URL(`https://${alternate}/item/${match[1]}.html`)
+  },
 }
 
 const genericPublicAdapter: SourceAdapter = {

@@ -6,6 +6,7 @@ pages_build_output_dir = "dist"
 APP_ENV = "production"
 DEFAULT_MARKETPLACE = "EBAY_US"
 PUBLIC_API_VERSION = "v1"
+USE_JINA_READER = "1"  # documented public reader fallback when the edge IP is blocked
 
 [[d1_databases]]
 binding = "DB"
