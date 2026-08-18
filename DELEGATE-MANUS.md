@@ -71,6 +71,18 @@ Optional to activate: Workers AI (free), Browser Run, Apify eBay, official Brows
 
 ---
 
+## ⚡ NEW v3 — ZIK-style dashboard landing (apply the same patch, 2026-08-18)
+
+- The landing page is now a full command-center DASHBOARD (like ZIK / the
+  Render project): live stat cards (listings generated, watchlist, tracked
+  sellers, scans, routes learned — real from /api/vault + /api/routing/intel),
+  a 12-category "Hot categories" grid where each chip runs a REAL live
+  winning-finder research pass (no fabricated percentages), an inline winning
+  finder with margin cards, a 10-tool quick grid, and the import box.
+- The old plain hero/import landing was removed.
+- Verify after deploy: open https://aibay-pro-george-live.pages.dev/ — you
+  should see the dashboard, not the old "Turn a product page…" hero.
+
 ## ⚡ NEW v2 — Free sold-data engine (apply the same patch, 2026-08-18)
 
 ZIK-style sold-price evidence WITHOUT any paid partnership or keys:
