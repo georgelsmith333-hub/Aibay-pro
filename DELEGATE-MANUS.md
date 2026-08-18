@@ -71,6 +71,20 @@ Optional to activate: Workers AI (free), Browser Run, Apify eBay, official Brows
 
 ---
 
+## ⚡ NEW v2 — Free sold-data engine (apply the same patch, 2026-08-18)
+
+ZIK-style sold-price evidence WITHOUT any paid partnership or keys:
+- `functions/lib/sold.ts` + `functions/api/market/sold` — reads eBay's PUBLIC
+  Completed/Sold search filter (`LH_Complete=1&LH_Sold=1`) — the same filter
+  any visitor can use. Parses sold listings (price, condition, sold label,
+  best-effort sold date), computes average/median/min/max/total with explicit
+  sample-size state (VERIFIED≥5, PARTIAL≥1, INSUFFICIENT_EVIDENCE). Labeled
+  "public completed-items sample", never the official sold-data API, never
+  revenue guarantees. Blocks (403/captcha/login) reported truthfully.
+- Winning finder now includes `soldEvidence` per item + at result level.
+- Frontend: **Sold evidence** tab in Tools.
+- Verify: `curl -s -X POST https://aibay-pro-george-live.pages.dev/api/market/sold -H 'content-type: application/json' -d '{"query":"wireless earbuds","limit":40}'`
+
 ## ⚡ NEW — Advanced dropshipper layer (apply this patch, 2026-08-18)
 
 The advanced layer is built and tested locally (9/9) but the GitHub push is blocked by repo branch rules. Apply it before the next deploy:
